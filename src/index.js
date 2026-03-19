@@ -23,7 +23,7 @@ bot.on("message", async (ctx, next) => {
   // /start command
   if (ctx.message.text === "/start") {
     return ctx.reply(
-      "Welcome! Send us a message and a support agent will get back to you shortly."
+      "Hey there 👋 Welcome to Paydora Support!\n\nJust type your question or describe your issue and one of our team members will be with you shortly. We're happy to help!"
     );
   }
 

@@ -52,8 +52,8 @@ Option B — Use MongoDB Atlas (free tier):
 ## 5. Clone and Set Up the Bot
 
 ```bash
-git clone <your-repo-url> paydora-support-bot
-cd paydora-support-bot
+git clone <your-repo-url> paydora-service-desk
+cd paydora-service-desk
 npm install
 ```
 
@@ -95,7 +95,7 @@ pm2 stop all        # stop the bot
 ## 9. Updating the Bot
 
 ```bash
-cd paydora-support-bot
+cd paydora-service-desk
 git pull
 npm install
 pm2 restart all
