@@ -1,0 +1,15 @@
+{
+  "name": "paydora-support-bot",
+  "version": "1.0.0",
+  "description": "Telegram customer support relay bot",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "grammy": "^1.35.0",
+    "mongoose": "^8.9.5"
+  }
+}
