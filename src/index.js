@@ -27,7 +27,7 @@ bot.on("message", async (ctx, next) => {
     );
   }
 
-  const customer = await getOrCreateCustomer(bot, ctx.from.id);
+  const customer = await getOrCreateCustomer(bot, ctx.from.id, ctx.from);
   await relayToAgents(bot, customer, ctx.message);
 });
 

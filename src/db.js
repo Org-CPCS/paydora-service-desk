@@ -24,13 +24,14 @@ const counterSchema = new mongoose.Schema({
 
 const Counter = mongoose.model("Counter", counterSchema);
 
-async function getNextAlias() {
+async function getNextAlias(firstName) {
   const counter = await Counter.findByIdAndUpdate(
     "customerAlias",
     { $inc: { seq: 1 } },
     { upsert: true, new: true }
   );
-  return `cust-${counter.seq}`;
+  const name = firstName || "User";
+  return `${name}-${counter.seq}`;
 }
 
 module.exports = { connect, Customer, getNextAlias };

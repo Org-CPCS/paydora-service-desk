@@ -4,7 +4,7 @@ const { scrub } = require("./pii");
 const AGENT_GROUP_ID = Number(process.env.AGENT_GROUP_ID);
 
 // Get or create a customer record + topic
-async function getOrCreateCustomer(bot, telegramUserId) {
+async function getOrCreateCustomer(bot, telegramUserId, fromUser) {
   let customer = await Customer.findOne({ telegramUserId });
   if (customer && customer.threadId) {
     // Reopen if the conversation was closed
@@ -30,7 +30,8 @@ async function getOrCreateCustomer(bot, telegramUserId) {
 
   // New customer — create alias and topic
   if (!customer) {
-    const alias = await getNextAlias();
+    const initial = fromUser?.first_name;
+    const alias = await getNextAlias(initial);
     customer = await Customer.create({ telegramUserId, alias });
   }
 
@@ -84,7 +85,7 @@ async function relayToAgents(bot, customer, msg) {
   } else if (msg.contact) {
     await bot.api.sendMessage(
       AGENT_GROUP_ID,
-      prefix + "[contact shared — blocked for privacy]",
+      prefix + `[contact: ${msg.contact.first_name} ${msg.contact.phone_number}]`,
       opts
     );
   } else if (msg.location) {
