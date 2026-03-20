@@ -47,6 +47,7 @@ Once the bot detects it's been added as admin, it will start automatically and I
 
 Group prep (technical admin):
 /addgroup <group_id> — Add a pre-configured empty group
+/removegroup <group_id> — Remove a group from the pool
 /listgroups — See available groups
 
 Tenant management:
@@ -96,6 +97,26 @@ Tenant management:
       (g) => `• Group ${g.groupId} — added ${g.createdAt.toLocaleDateString()}`
     );
     return ctx.reply(`Available groups (${groups.length}):\n${lines.join("\n")}`);
+  });
+
+  // /removegroup <group_id> — remove a group from the pool
+  bot.command("removegroup", async (ctx) => {
+    const groupIdStr = (ctx.match || "").trim();
+    if (!groupIdStr) {
+      return ctx.reply("Usage: /removegroup <group_id>");
+    }
+
+    const groupId = Number(groupIdStr);
+    if (!Number.isFinite(groupId)) {
+      return ctx.reply("Invalid argument: group_id must be a number.");
+    }
+
+    const result = await EmptyGroup.deleteOne({ groupId });
+    if (result.deletedCount === 0) {
+      return ctx.reply(`Group ${groupId} is not in the pool.`);
+    }
+
+    return ctx.reply(`✅ Group ${groupId} removed from the pool.`);
   });
 
   // /register <bot_token> <group_name> — register a tenant, pending bot addition to group
