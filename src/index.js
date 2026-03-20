@@ -53,7 +53,7 @@ bot.on("message", async (ctx) => {
       await ctx.reply("✅ Conversation closed.", { message_thread_id: threadId });
       try {
         await bot.api.editForumTopic(AGENT_GROUP_ID, threadId, {
-          name: `✅ ${customer.alias}`,
+          name: `[done] ${customer.alias}`,
         });
         await bot.api.closeForumTopic(AGENT_GROUP_ID, threadId);
       } catch (e) {
