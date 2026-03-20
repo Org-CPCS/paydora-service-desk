@@ -1,101 +1,55 @@
 require("dotenv").config();
-const { Bot } = require("grammy");
+const mongoose = require("mongoose");
 const db = require("./db");
-const {
-  getOrCreateCustomer,
-  relayToAgents,
-  relayToCustomer,
-  AGENT_GROUP_ID,
-} = require("./relay");
+const { BotManager } = require("./bot-manager");
+const { createMasterBot } = require("./master");
 
-const bot = new Bot(process.env.BOT_TOKEN);
-
-const ADMIN_IDS = (process.env.ADMIN_USER_IDS || "")
-  .split(",")
-  .map((id) => Number(id.trim()))
-  .filter(Boolean);
-
-// --- Customer DM handler ---
-bot.on("message", async (ctx, next) => {
-  // Only handle private (DM) messages from customers
-  if (ctx.chat.type !== "private") return next();
-
-  // /start command
-  if (ctx.message.text === "/start") {
-    return ctx.reply(
-      "Hey there 👋 Welcome to Paydora Support!\n\nJust type your question or describe your issue and one of our team members will be with you shortly. We're happy to help!"
-    );
-  }
-
-  const customer = await getOrCreateCustomer(bot, ctx.from.id, ctx.from);
-  await relayToAgents(bot, customer, ctx.message);
-});
-
-// --- Agent group handler ---
-bot.on("message", async (ctx) => {
-  // Only handle messages from the agent group
-  if (ctx.chat.id !== AGENT_GROUP_ID) return;
-
-  // Ignore messages from the bot itself (prevent echo loops)
-  if (ctx.from.is_bot) return;
-
-  // Must be inside a topic (thread)
-  const threadId = ctx.message.message_thread_id;
-  if (!threadId) return;
-
-  // Handle /close command
-  if (ctx.message.text === "/close") {
-    const { Customer } = require("./db");
-    const customer = await Customer.findOne({ threadId });
-    if (customer) {
-      customer.status = "closed";
-      await customer.save();
-      await ctx.reply("✅ Conversation closed.", { message_thread_id: threadId });
-      try {
-        await bot.api.editForumTopic(AGENT_GROUP_ID, threadId, {
-          name: `[done] ${customer.alias}`,
-        });
-        await bot.api.closeForumTopic(AGENT_GROUP_ID, threadId);
-      } catch (e) {
-        console.error("Failed to close/rename topic:", e.message);
-      }
-    }
-    return;
-  }
-
-  // Handle /note command — internal note, not forwarded
-  if (ctx.message.text && ctx.message.text.startsWith("/note ")) {
-    await ctx.reply(`📝 Note: ${ctx.message.text.slice(6)}`, {
-      message_thread_id: threadId,
-    });
-    return;
-  }
-
-  // Handle /whois command — admin only
-  if (ctx.message.text && ctx.message.text.startsWith("/whois ")) {
-    if (!ADMIN_IDS.includes(ctx.from.id)) {
-      return ctx.reply("Not authorized.", { message_thread_id: threadId });
-    }
-    const alias = ctx.message.text.slice(7).trim();
-    const { Customer } = require("./db");
-    const customer = await Customer.findOne({ alias });
-    if (customer) {
-      return ctx.reply(`${alias} → Telegram ID: ${customer.telegramUserId}`, {
-        message_thread_id: threadId,
-      });
-    }
-    return ctx.reply("Customer not found.", { message_thread_id: threadId });
-  }
-
-  // Regular message — relay to customer
-  await relayToCustomer(bot, threadId, ctx.message);
-});
-
-// --- Start ---
 async function main() {
+  // Validate required environment variables
+  if (!process.env.SUPER_ADMIN_ID) {
+    console.error("SUPER_ADMIN_ID environment variable is required.");
+    process.exit(1);
+  }
+  if (!process.env.MASTER_BOT_TOKEN) {
+    console.error("MASTER_BOT_TOKEN environment variable is required.");
+    process.exit(1);
+  }
+
+  // Connect to MongoDB
   await db.connect();
-  console.log("Bot starting...");
-  bot.start();
+
+  // Create Bot Manager
+  const botManager = new BotManager();
+
+  // Create and start Master Bot
+  const masterBot = createMasterBot(
+    process.env.MASTER_BOT_TOKEN,
+    process.env.SUPER_ADMIN_ID,
+    botManager
+  );
+  masterBot.start({
+    onStart: () => console.log("[Master] Master Bot started."),
+  });
+
+  // Start all active Sub-Bots
+  await botManager.loadAndStartAll();
+  console.log("[Main] All active Sub-Bots loaded.");
+
+  // Graceful shutdown
+  const shutdown = async (signal) => {
+    console.log(`[Main] Received ${signal}, shutting down...`);
+    await botManager.stopAll();
+    await masterBot.stop();
+    await mongoose.connection.close();
+    console.log("[Main] Shutdown complete.");
+    process.exit(0);
+  };
+
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
 }
 
-main().catch(console.error);
+main().catch((err) => {
+  console.error("[Main] Fatal error:", err);
+  process.exit(1);
+});

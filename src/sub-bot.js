@@ -1,0 +1,78 @@
+const { Bot } = require("grammy");
+const { Customer } = require("./db");
+const { getOrCreateCustomer, relayToAgents, relayToCustomer } = require("./relay");
+
+/**
+ * Creates a configured grammY Bot instance for a tenant.
+ * @param {string} token - Telegram bot token
+ * @param {{ tenantId: string, agentGroupId: number, adminUserId: number }} tenant
+ * @returns {Bot} configured bot instance (not yet started)
+ */
+function createSubBot(token, tenant) {
+  const { tenantId, agentGroupId } = tenant;
+  const bot = new Bot(token);
+
+  // --- Customer DM handler ---
+  bot.on("message", async (ctx, next) => {
+    if (ctx.chat.type !== "private") return next();
+
+    // /start command — welcome message
+    if (ctx.message.text === "/start") {
+      return ctx.reply(
+        "Hey there 👋 Welcome to Paydora Support!\n\nJust type your question or describe your issue and one of our team members will be with you shortly. We're happy to help!"
+      );
+    }
+
+    const customer = await getOrCreateCustomer(
+      bot,
+      tenantId,
+      ctx.from.id,
+      ctx.from,
+      agentGroupId
+    );
+    await relayToAgents(bot, customer, ctx.message, agentGroupId);
+  });
+
+  // --- Agent group handler ---
+  bot.on("message", async (ctx) => {
+    if (ctx.chat.id !== agentGroupId) return;
+    if (ctx.from.is_bot) return;
+
+    const threadId = ctx.message.message_thread_id;
+    if (!threadId) return;
+
+    // /close — mark conversation closed, rename topic
+    if (ctx.message.text === "/close") {
+      const customer = await Customer.findOne({ tenantId, threadId });
+      if (customer) {
+        customer.status = "closed";
+        await customer.save();
+        await ctx.reply("✅ Conversation closed.", { message_thread_id: threadId });
+        try {
+          await bot.api.editForumTopic(agentGroupId, threadId, {
+            name: `[done] ${customer.alias}`,
+          });
+          await bot.api.closeForumTopic(agentGroupId, threadId);
+        } catch (e) {
+          console.error("Failed to close/rename topic:", e.message);
+        }
+      }
+      return;
+    }
+
+    // /note — internal note, not relayed to customer
+    if (ctx.message.text && ctx.message.text.startsWith("/note ")) {
+      await ctx.reply(`📝 Note: ${ctx.message.text.slice(6)}`, {
+        message_thread_id: threadId,
+      });
+      return;
+    }
+
+    // Regular agent reply — relay to customer
+    await relayToCustomer(bot, tenantId, threadId, ctx.message);
+  });
+
+  return bot;
+}
+
+module.exports = { createSubBot };
