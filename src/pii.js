@@ -16,11 +16,21 @@ const patterns = [
   { regex: /@[a-zA-Z][a-zA-Z0-9_]{3,31}/g, label: "[username]" },
 ];
 
-function scrub(text) {
+function scrub(text, userInfo) {
   if (!text) return text;
   let result = text;
   for (const { regex, label } of patterns) {
     result = result.replace(regex, label);
+  }
+  // Scrub the sender's own Telegram identity (username, first/last name)
+  if (userInfo) {
+    const names = [userInfo.username, userInfo.first_name, userInfo.last_name]
+      .filter(Boolean);
+    for (const name of names) {
+      if (name.length >= 2) {
+        result = result.replace(new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), "[redacted]");
+      }
+    }
   }
   return result;
 }
