@@ -50,8 +50,11 @@ bot.on("message", async (ctx) => {
     if (customer) {
       customer.status = "closed";
       await customer.save();
-      await ctx.reply("Conversation closed.", { message_thread_id: threadId });
+      await ctx.reply("✅ Conversation closed.", { message_thread_id: threadId });
       try {
+        await bot.api.editForumTopic(AGENT_GROUP_ID, threadId, {
+          name: `✅ ${customer.alias}`,
+        });
         await bot.api.closeForumTopic(AGENT_GROUP_ID, threadId);
       } catch (e) {
         // topic might already be closed

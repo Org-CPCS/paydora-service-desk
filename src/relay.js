@@ -6,7 +6,27 @@ const AGENT_GROUP_ID = Number(process.env.AGENT_GROUP_ID);
 // Get or create a customer record + topic
 async function getOrCreateCustomer(bot, telegramUserId) {
   let customer = await Customer.findOne({ telegramUserId });
-  if (customer && customer.threadId) return customer;
+  if (customer && customer.threadId) {
+    // Reopen if the conversation was closed
+    if (customer.status === "closed") {
+      customer.status = "open";
+      await customer.save();
+      try {
+        await bot.api.reopenForumTopic(AGENT_GROUP_ID, customer.threadId);
+        await bot.api.editForumTopic(AGENT_GROUP_ID, customer.threadId, {
+          name: customer.alias,
+        });
+      } catch (e) {
+        // topic might already be open
+      }
+      await bot.api.sendMessage(
+        AGENT_GROUP_ID,
+        `🔄 ${customer.alias} has sent a new message — conversation reopened.`,
+        { message_thread_id: customer.threadId }
+      );
+    }
+    return customer;
+  }
 
   // New customer — create alias and topic
   if (!customer) {
