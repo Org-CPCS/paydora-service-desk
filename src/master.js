@@ -5,7 +5,7 @@ const { Tenant, EmptyGroup } = require("./db");
  * Creates the Master Bot for tenant management.
  * Multiple Super Admins (comma-separated IDs) can interact with this bot.
  * @param {string} token - Master bot Telegram token
- * @param {string} superAdminIds - Comma-separated Telegram user IDs of Super Admins
+ * @param {string} superAdminIds - Comma-separated Telegram user IDs
  * @param {import('./bot-manager').BotManager} botManager
  * @returns {Bot}
  */
@@ -25,34 +25,32 @@ function createMasterBot(token, superAdminIds, botManager) {
 `📖 How to register a new support bot
 
 Step 1️⃣  Check available groups
-Send /listgroups to see pre-configured groups ready to use.
+Send /listgroups to see pre-configured groups ready to use. If none are available, ask the technical admin to add one.
 
-Step 2️⃣  Register a new tenant
+Step 2️⃣  Create a bot
+Open Telegram, search for @BotFather, send /newbot, and follow the prompts. You'll get a bot token (looks like 7123456789:AAH...). Save it.
+
+Step 3️⃣  Register
 Send this command:
-/register <admin_user_id> <group_name>
-
-The admin_user_id is the Telegram user ID of the person who will manage the support group. They can get it by messaging @userinfobot.
-
-The system will automatically:
-• Pick an available group
-• Rename it to your chosen name
-• Start the support bot
-• Generate an invite link for the admin
+/register <bot_token> <group_name>
 
 Example:
-/register 987654321 Acme Support
+/register 7123456789:AAHxyz Acme Support
 
-That's it! Share the invite link with the admin. 🎉
+Step 4️⃣  Add the bot to the group
+After registering, I'll give you an invite link and the bot's username. Open the group using the invite link, then add the bot (@BotUsername) as a member and promote it to admin with topic management permissions.
+
+Once the bot detects it's been added as admin, it will start automatically and I'll confirm here. ✅
 
 ━━━━━━━━━━━━━━━━━━━━━━
 📋 All commands:
 
-Group management:
-/addgroup <group_id> <bot_token> — Add a pre-configured group
+Group prep (technical admin):
+/addgroup <group_id> — Add a pre-configured empty group
 /listgroups — See available groups
 
 Tenant management:
-/register <admin_user_id> <group_name> — Register a new tenant
+/register <bot_token> <group_name> — Register a new tenant
 /list — See all registered tenants
 /status <tenant_id> — Check a tenant's status
 /stop <tenant_id> — Pause a tenant
@@ -61,33 +59,67 @@ Tenant management:
     );
   });
 
-  // /addgroup <group_id> <bot_token> — pre-provision an empty group
+  // /addgroup <group_id> — pre-provision an empty group (technical admin)
   bot.command("addgroup", async (ctx) => {
-    const args = (ctx.match || "").trim().split(/\s+/);
-    if (args.length < 2 || !args[0]) {
-      return ctx.reply("Usage: /addgroup <group_id> <bot_token>");
+    const groupIdStr = (ctx.match || "").trim();
+    if (!groupIdStr) {
+      return ctx.reply("Usage: /addgroup <group_id>");
     }
 
-    const [groupIdStr, botToken] = args;
     const groupId = Number(groupIdStr);
-
     if (!Number.isFinite(groupId)) {
       return ctx.reply("Invalid argument: group_id must be a number.");
     }
 
-    // Check if group already exists
     const existingGroup = await EmptyGroup.findOne({ groupId });
     if (existingGroup) {
-      return ctx.reply(`Group ${groupId} is already added.`);
+      return ctx.reply(`Group ${groupId} is already in the pool.`);
     }
 
-    // Check if group is already used by a tenant
     const existingTenant = await Tenant.findOne({ agentGroupId: groupId });
     if (existingTenant) {
       return ctx.reply(`Group ${groupId} is already assigned to tenant ${existingTenant._id}.`);
     }
 
-    // Validate bot token
+    await EmptyGroup.create({ groupId });
+    return ctx.reply(`✅ Group ${groupId} added to the pool. It's now available for /register.`);
+  });
+
+  // /listgroups — show available pre-configured groups
+  bot.command("listgroups", async (ctx) => {
+    const groups = await EmptyGroup.find();
+    if (groups.length === 0) {
+      return ctx.reply("No available groups. Ask the technical admin to add one with /addgroup.");
+    }
+
+    const lines = groups.map(
+      (g) => `• Group ${g.groupId} — added ${g.createdAt.toLocaleDateString()}`
+    );
+    return ctx.reply(`Available groups (${groups.length}):\n${lines.join("\n")}`);
+  });
+
+  // /register <bot_token> <group_name> — register a tenant, pending bot addition to group
+  bot.command("register", async (ctx) => {
+    const match = (ctx.match || "").trim();
+    const spaceIdx = match.indexOf(" ");
+    if (!match || spaceIdx === -1) {
+      return ctx.reply("Usage: /register <bot_token> <group_name>");
+    }
+
+    const botToken = match.slice(0, spaceIdx);
+    const groupName = match.slice(spaceIdx + 1).trim();
+
+    if (!groupName) {
+      return ctx.reply("Please provide a group name.");
+    }
+
+    // Check for duplicate bot token
+    const existing = await Tenant.findOne({ botToken });
+    if (existing) {
+      return ctx.reply(`This bot token is already registered (tenant: ${existing._id}).`);
+    }
+
+    // Validate token by calling getMe
     let meResult;
     try {
       const testBot = new Bot(botToken);
@@ -96,109 +128,45 @@ Tenant management:
       return ctx.reply(`Invalid bot token: ${err.message}`);
     }
 
-    // Verify bot is admin in the group
-    try {
-      const admins = await new Bot(botToken).api.getChatAdministrators(groupId);
-      const isAdmin = admins.some((a) => a.user.id === meResult.id);
-      if (!isAdmin) {
-        return ctx.reply(
-          `Bot @${meResult.username} is not an admin in group ${groupId}. Add the bot as admin first.`
-        );
-      }
-    } catch (err) {
-      return ctx.reply(
-        `Could not verify bot in group ${groupId}. Make sure the bot is added as admin.`
-      );
-    }
-
-    await EmptyGroup.create({
-      groupId,
-      botToken,
-      botUsername: meResult.username,
-    });
-
-    return ctx.reply(
-      `✅ Group added!\nGroup ID: ${groupId}\nBot: @${meResult.username}\n\nThis group is now available for /register.`
-    );
-  });
-
-  // /listgroups — show available pre-configured groups
-  bot.command("listgroups", async (ctx) => {
-    const groups = await EmptyGroup.find();
-    if (groups.length === 0) {
-      return ctx.reply("No available groups. Use /addgroup to add one.");
-    }
-
-    const lines = groups.map(
-      (g) => `• Group ${g.groupId} — @${g.botUsername || "unknown"} — added ${g.createdAt.toLocaleDateString()}`
-    );
-    return ctx.reply(`Available groups (${groups.length}):\n${lines.join("\n")}`);
-  });
-
-  // /register <admin_user_id> <group_name> — register a new tenant using a pre-configured group
-  bot.command("register", async (ctx) => {
-    const match = (ctx.match || "").trim();
-    const spaceIdx = match.indexOf(" ");
-    if (!match || spaceIdx === -1) {
-      return ctx.reply("Usage: /register <admin_user_id> <group_name>");
-    }
-
-    const adminUserIdStr = match.slice(0, spaceIdx);
-    const groupName = match.slice(spaceIdx + 1).trim();
-    const adminUserId = Number(adminUserIdStr);
-
-    if (!Number.isFinite(adminUserId)) {
-      return ctx.reply("Invalid argument: admin_user_id must be a number.");
-    }
-    if (!groupName) {
-      return ctx.reply("Please provide a group name.");
-    }
-
     // Pick the next available empty group
     const emptyGroup = await EmptyGroup.findOne();
     if (!emptyGroup) {
       return ctx.reply("No available groups. Ask the technical admin to add one with /addgroup.");
     }
 
-    const { groupId, botToken, botUsername } = emptyGroup;
+    const groupId = emptyGroup.groupId;
 
-    // Check for duplicate bot token (shouldn't happen, but just in case)
-    const existing = await Tenant.findOne({ botToken });
-    if (existing) {
-      return ctx.reply(`Bot @${botUsername} is already registered as tenant ${existing._id}.`);
-    }
-
-    // Rename the group
+    // Rename the group using the Master Bot (which should already be admin since you created it)
     try {
-      await new Bot(botToken).api.setChatTitle(groupId, groupName);
+      await bot.api.setChatTitle(groupId, groupName);
     } catch (err) {
-      return ctx.reply(`Failed to rename group: ${err.message}`);
+      return ctx.reply(`Failed to rename group: ${err.message}\nMake sure the Master Bot is an admin in group ${groupId}.`);
     }
 
-    // Generate invite link for the admin
+    // Generate invite link via the Master Bot
     let inviteLink;
     try {
-      const result = await new Bot(botToken).api.createChatInviteLink(groupId, {
+      const result = await bot.api.createChatInviteLink(groupId, {
         name: `Invite for ${groupName}`,
       });
       inviteLink = result.invite_link;
     } catch (err) {
       console.error("[MasterBot] Failed to create invite link:", err.message);
-      inviteLink = "(could not generate invite link — add admin manually)";
+      inviteLink = "(could not generate — add members manually)";
     }
 
-    // Create tenant record
+    // Create tenant in "pending" status — will activate when sub-bot is added as admin
     const tenant = await Tenant.create({
       botToken,
-      botUsername,
+      botUsername: meResult.username,
       agentGroupId: groupId,
-      status: "active",
+      status: "pending",
     });
 
     // Remove from empty groups pool
     await EmptyGroup.deleteOne({ _id: emptyGroup._id });
 
-    // Start the Sub-Bot immediately
+    // Start the sub-bot so it can listen for my_chat_member updates
     try {
       await botManager.startBot(tenant);
     } catch (err) {
@@ -206,7 +174,7 @@ Tenant management:
     }
 
     return ctx.reply(
-      `✅ Tenant registered!\n\nBot: @${botUsername}\nGroup: ${groupName}\nTenant ID: ${tenant._id}\n\n🔗 Invite link for the admin:\n${inviteLink}\n\nShare this link with the admin (user ID: ${adminUserId}) so they can join the group.`
+      `✅ Tenant created (pending bot setup)!\n\nBot: @${meResult.username}\nGroup: ${groupName}\nTenant ID: ${tenant._id}\n\n🔗 Group invite link:\n${inviteLink}\n\n👉 Next step: Open the group and add @${meResult.username} as a member, then promote it to admin with topic management permissions.\n\nOnce the bot is admin, it will activate automatically.`
     );
   });
 

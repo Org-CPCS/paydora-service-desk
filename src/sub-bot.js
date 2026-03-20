@@ -1,16 +1,47 @@
 const { Bot } = require("grammy");
-const { Customer } = require("./db");
+const { Customer, Tenant } = require("./db");
 const { getOrCreateCustomer, relayToAgents, relayToCustomer } = require("./relay");
 
 /**
  * Creates a configured grammY Bot instance for a tenant.
  * @param {string} token - Telegram bot token
- * @param {{ tenantId: string, agentGroupId: number, adminUserId: number }} tenant
+ * @param {{ tenantId: string, agentGroupId: number }} tenant
+ * @param {{ notifyActivation: (tenantId: string) => void }} [callbacks]
  * @returns {Bot} configured bot instance (not yet started)
  */
-function createSubBot(token, tenant) {
+function createSubBot(token, tenant, callbacks) {
   const { tenantId, agentGroupId } = tenant;
   const bot = new Bot(token);
+
+  // --- Detect when bot is added to the agent group ---
+  bot.on("my_chat_member", async (ctx) => {
+    const update = ctx.myChatMember;
+    if (update.chat.id !== agentGroupId) return;
+
+    const newStatus = update.new_chat_member.status;
+
+    // Bot was added as a regular member — ask Master Bot to promote it
+    if (newStatus === "member") {
+      console.log(`[SubBot] Tenant ${tenantId} — bot added to group as member, requesting promotion...`);
+      if (callbacks && callbacks.promoteBot) {
+        const botId = update.new_chat_member.user.id;
+        callbacks.promoteBot(tenantId.toString(), agentGroupId, botId);
+      }
+    }
+
+    // Bot was promoted to admin — activate the tenant
+    if (newStatus === "administrator") {
+      const t = await Tenant.findById(tenantId);
+      if (t && t.status === "pending") {
+        t.status = "active";
+        await t.save();
+        console.log(`[SubBot] Tenant ${tenantId} activated — bot is now admin in group.`);
+        if (callbacks && callbacks.notifyActivation) {
+          callbacks.notifyActivation(tenantId.toString());
+        }
+      }
+    }
+  });
 
   // --- Customer DM handler ---
   bot.on("message", async (ctx, next) => {

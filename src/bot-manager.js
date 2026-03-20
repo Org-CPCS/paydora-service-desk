@@ -5,6 +5,26 @@ class BotManager {
   constructor() {
     /** @type {Map<string, { bot: import('grammy').Bot, startedAt: Date }>} */
     this.bots = new Map();
+    /** @type {((tenantId: string) => void) | null} */
+    this.onActivation = null;
+    /** @type {((tenantId: string, groupId: number, botId: number) => void) | null} */
+    this.onPromoteBot = null;
+  }
+
+  /**
+   * Set a callback that fires when a pending tenant is activated.
+   * @param {(tenantId: string) => void} callback
+   */
+  setActivationCallback(callback) {
+    this.onActivation = callback;
+  }
+
+  /**
+   * Set a callback that fires when a sub-bot needs to be promoted to admin.
+   * @param {(tenantId: string, groupId: number, botId: number) => void} callback
+   */
+  setPromotionCallback(callback) {
+    this.onPromoteBot = callback;
   }
 
   /**
@@ -12,7 +32,7 @@ class BotManager {
    * Uses startBotWithRetry so a single failing tenant doesn't block others.
    */
   async loadAndStartAll() {
-    const tenants = await Tenant.find({ status: "active" });
+    const tenants = await Tenant.find({ status: { $in: ["active", "pending"] } });
     for (const tenant of tenants) {
       await this.startBotWithRetry(tenant);
     }
@@ -27,6 +47,13 @@ class BotManager {
     const bot = createSubBot(tenant.botToken, {
       tenantId: tenant._id,
       agentGroupId: tenant.agentGroupId,
+    }, {
+      notifyActivation: (tid) => {
+        if (this.onActivation) this.onActivation(tid);
+      },
+      promoteBot: (tid, groupId, botId) => {
+        if (this.onPromoteBot) this.onPromoteBot(tid, groupId, botId);
+      },
     });
 
     // Attach error handler for fatal polling errors — triggers retry

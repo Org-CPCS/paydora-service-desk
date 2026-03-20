@@ -12,7 +12,7 @@ const tenantSchema = new mongoose.Schema({
   agentGroupId: { type: Number, required: true },
   status: {
     type: String,
-    enum: ["active", "inactive", "removed"],
+    enum: ["active", "inactive", "removed", "pending"],
     default: "active",
   },
   createdAt: { type: Date, default: Date.now },
@@ -61,8 +61,6 @@ async function getNextAlias(tenantId, firstName) {
 // Pre-provisioned empty groups — ready to be assigned to new tenants
 const emptyGroupSchema = new mongoose.Schema({
   groupId: { type: Number, required: true, unique: true },
-  botToken: { type: String, required: true },
-  botUsername: { type: String },
   createdAt: { type: Date, default: Date.now },
 });
 
