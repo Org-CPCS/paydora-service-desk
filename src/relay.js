@@ -81,6 +81,12 @@ async function relayToAgents(bot, customer, msg) {
     });
   } else if (msg.sticker) {
     await bot.api.sendMessage(AGENT_GROUP_ID, prefix + "[sticker]", opts);
+  } else if (msg.contact) {
+    await bot.api.sendMessage(
+      AGENT_GROUP_ID,
+      prefix + "[contact shared — blocked for privacy]",
+      opts
+    );
   } else if (msg.location) {
     await bot.api.sendMessage(
       AGENT_GROUP_ID,
