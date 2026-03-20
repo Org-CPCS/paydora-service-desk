@@ -17,7 +17,7 @@ async function getOrCreateCustomer(bot, telegramUserId) {
           name: customer.alias,
         });
       } catch (e) {
-        // topic might already be open
+        console.error("Failed to reopen/rename topic:", e.message);
       }
       await bot.api.sendMessage(
         AGENT_GROUP_ID,
