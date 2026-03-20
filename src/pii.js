@@ -12,6 +12,8 @@ const patterns = [
   { regex: /\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{1,7}\b/g, label: "[card]" },
   // SSN-like patterns (XXX-XX-XXXX)
   { regex: /\b\d{3}-\d{2}-\d{4}\b/g, label: "[redacted]" },
+  // Telegram usernames (@username)
+  { regex: /@[a-zA-Z][a-zA-Z0-9_]{3,31}/g, label: "[username]" },
 ];
 
 function scrub(text) {
