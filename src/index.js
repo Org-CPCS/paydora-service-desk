@@ -57,7 +57,7 @@ bot.on("message", async (ctx) => {
         });
         await bot.api.closeForumTopic(AGENT_GROUP_ID, threadId);
       } catch (e) {
-        // topic might already be closed
+        console.error("Failed to close/rename topic:", e.message);
       }
     }
     return;
