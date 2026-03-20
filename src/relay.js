@@ -1,4 +1,5 @@
 const { Customer, getNextAlias } = require("./db");
+const { scrub } = require("./pii");
 
 const AGENT_GROUP_ID = Number(process.env.AGENT_GROUP_ID);
 
@@ -35,17 +36,17 @@ async function relayToAgents(bot, customer, msg) {
   const prefix = `${customer.alias}:\n`;
 
   if (msg.text) {
-    await bot.api.sendMessage(AGENT_GROUP_ID, prefix + msg.text, opts);
+    await bot.api.sendMessage(AGENT_GROUP_ID, prefix + scrub(msg.text), opts);
   } else if (msg.photo) {
     const photo = msg.photo[msg.photo.length - 1]; // highest resolution
     await bot.api.sendPhoto(AGENT_GROUP_ID, photo.file_id, {
       ...opts,
-      caption: prefix + (msg.caption || ""),
+      caption: prefix + scrub(msg.caption || ""),
     });
   } else if (msg.document) {
     await bot.api.sendDocument(AGENT_GROUP_ID, msg.document.file_id, {
       ...opts,
-      caption: prefix + (msg.caption || ""),
+      caption: prefix + scrub(msg.caption || ""),
     });
   } else if (msg.voice) {
     await bot.api.sendVoice(AGENT_GROUP_ID, msg.voice.file_id, {
@@ -55,7 +56,7 @@ async function relayToAgents(bot, customer, msg) {
   } else if (msg.video) {
     await bot.api.sendVideo(AGENT_GROUP_ID, msg.video.file_id, {
       ...opts,
-      caption: prefix + (msg.caption || ""),
+      caption: prefix + scrub(msg.caption || ""),
     });
   } else if (msg.sticker) {
     await bot.api.sendMessage(AGENT_GROUP_ID, prefix + "[sticker]", opts);
