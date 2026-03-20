@@ -58,4 +58,14 @@ async function getNextAlias(tenantId, firstName) {
   return `${name}-${counter.seq}`;
 }
 
-module.exports = { connect, Tenant, Customer, getNextAlias };
+// Pre-provisioned empty groups — ready to be assigned to new tenants
+const emptyGroupSchema = new mongoose.Schema({
+  groupId: { type: Number, required: true, unique: true },
+  botToken: { type: String, required: true },
+  botUsername: { type: String },
+  createdAt: { type: Date, default: Date.now },
+});
+
+const EmptyGroup = mongoose.model("EmptyGroup", emptyGroupSchema);
+
+module.exports = { connect, Tenant, Customer, EmptyGroup, getNextAlias };

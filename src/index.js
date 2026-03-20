@@ -6,8 +6,8 @@ const { createMasterBot } = require("./master");
 
 async function main() {
   // Validate required environment variables
-  if (!process.env.SUPER_ADMIN_ID) {
-    console.error("SUPER_ADMIN_ID environment variable is required.");
+  if (!process.env.SUPER_ADMIN_IDS) {
+    console.error("SUPER_ADMIN_IDS environment variable is required.");
     process.exit(1);
   }
   if (!process.env.MASTER_BOT_TOKEN) {
@@ -24,7 +24,7 @@ async function main() {
   // Create and start Master Bot
   const masterBot = createMasterBot(
     process.env.MASTER_BOT_TOKEN,
-    process.env.SUPER_ADMIN_ID,
+    process.env.SUPER_ADMIN_IDS,
     botManager
   );
   masterBot.start({
