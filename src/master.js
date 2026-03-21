@@ -25,7 +25,7 @@ function createMasterBot(token, superAdminIds, botManager) {
 `📖 How to register a new support bot
 
 Step 1️⃣  Check available groups
-Send /listgroups to see pre-configured groups ready to use. If none are available, ask the technical admin to add one.
+Send /listgroups to see pre-configured groups ready to use. If none are available, see /grouphelp for exact steps on how to prepare one.
 
 Step 2️⃣  Create a bot
 Open Telegram, search for @BotFather, send /newbot, and follow the prompts. You'll get a bot token (looks like 7123456789:AAH...). Save it.
@@ -46,6 +46,8 @@ Once the bot detects it's been added as admin, it will start automatically and I
 📋 All commands:
 
 Group prep (technical admin):
+/grouphelp — Step-by-step guide to prepare a new group
+/validate <group_id> — Check if a group is ready to be assigned
 /addgroup <group_id> — Add a pre-configured empty group
 /removegroup <group_id> — Remove a group from the pool
 /listgroups — See available groups
@@ -58,6 +60,136 @@ Tenant management:
 /start <tenant_id> — Resume a tenant
 /remove <tenant_id> — Remove a tenant`
     );
+  });
+
+  // /grouphelp — step-by-step guide to prepare a new agent group
+  bot.command("grouphelp", async (ctx) => {
+    return ctx.reply(
+`🛠 How to prepare a new agent group
+
+Step 1️⃣  Create a new Telegram group
+Open Telegram and create a new group with any name (e.g. "EmptyGroup1", "EmptyGroup2"). You can add just yourself for now.
+
+Step 2️⃣  Add @PaydoraMasterBot to the group
+Search for @PaydoraMasterBot and add it as a member.
+
+Step 3️⃣  Promote @PaydoraMasterBot to admin
+Go to the group info → Members → tap on @PaydoraMasterBot → Promote to Admin. Make sure it has permissions to manage topics, delete messages, and invite users.
+
+Step 4️⃣  Enable Topics
+Go to Edit Group (pencil icon) → Topics → turn ON. This converts the group into a supergroup with forum topics.
+
+Step 5️⃣  Get the group ID
+Add @RawDataBot (or any group-info bot) to the group. It will send a message showing the chat ID (a negative number like -1001234567890). Copy that number, then remove the info bot.
+
+Step 6️⃣  Add the group to the pool
+Send this command to me:
+/addgroup <group_id>
+
+Example:
+/addgroup -1001234567890
+
+💡 Tip: Before adding, you can run /validate <group_id> to check everything is set up correctly.
+
+Step 7️⃣  Verify
+Send /listgroups to confirm the group appears in the available pool.
+
+✅ The group is now ready to be assigned to a tenant via /register.`
+    );
+  });
+
+  // /validate <group_id> — check if a group is ready to be assigned
+  bot.command("validate", async (ctx) => {
+    const groupIdStr = (ctx.match || "").trim();
+    if (!groupIdStr) {
+      return ctx.reply("Usage: /validate <group_id>");
+    }
+
+    const groupId = Number(groupIdStr);
+    if (!Number.isFinite(groupId)) {
+      return ctx.reply("Invalid argument: group_id must be a number.");
+    }
+
+    const checks = [];
+    let chat;
+
+    // 1. Can the bot access the group?
+    try {
+      chat = await bot.api.getChat(groupId);
+      checks.push("✅ Bot has access to the group");
+    } catch (err) {
+      checks.push("❌ Bot cannot access the group — make sure @PaydoraMasterBot is a member");
+      return ctx.reply(`Validation results for ${groupId}:\n\n${checks.join("\n")}\n\nFix this first, then re-run /validate.`);
+    }
+
+    // 2. Is it a supergroup?
+    if (chat.type === "supergroup") {
+      checks.push("✅ Group is a supergroup");
+    } else {
+      checks.push(`❌ Group is a "${chat.type}" — it must be a supergroup. Enable Topics in group settings to convert it.`);
+    }
+
+    // 3. Are topics (forum) enabled?
+    if (chat.is_forum) {
+      checks.push("✅ Topics are enabled");
+    } else {
+      checks.push("❌ Topics are not enabled — go to Edit Group → Topics → turn ON");
+    }
+
+    // 4. Is the bot an admin?
+    let botMember;
+    try {
+      const me = await bot.api.getMe();
+      botMember = await bot.api.getChatMember(groupId, me.id);
+    } catch (err) {
+      checks.push("❌ Could not check bot's admin status");
+      return ctx.reply(`Validation results for ${groupId}:\n\n${checks.join("\n")}`);
+    }
+
+    if (botMember.status === "administrator" || botMember.status === "creator") {
+      checks.push("✅ Bot is an admin");
+
+      // 5. Check specific permissions
+      if (botMember.status === "administrator") {
+        const perms = [];
+        if (botMember.can_manage_topics) {
+          perms.push("✅ Can manage topics");
+        } else {
+          perms.push("❌ Cannot manage topics — enable this permission");
+        }
+        if (botMember.can_delete_messages) {
+          perms.push("✅ Can delete messages");
+        } else {
+          perms.push("⚠️ Cannot delete messages (optional but recommended)");
+        }
+        if (botMember.can_invite_users) {
+          perms.push("✅ Can invite users");
+        } else {
+          perms.push("⚠️ Cannot invite users (needed for generating invite links)");
+        }
+        checks.push(...perms);
+      }
+    } else {
+      checks.push("❌ Bot is not an admin — promote @PaydoraMasterBot to admin with topic management permissions");
+    }
+
+    // 6. Already in pool or assigned?
+    const inPool = await EmptyGroup.findOne({ groupId });
+    const assignedTenant = await Tenant.findOne({ agentGroupId: groupId });
+    if (assignedTenant) {
+      checks.push(`⚠️ Group is already assigned to tenant ${assignedTenant._id}`);
+    } else if (inPool) {
+      checks.push("ℹ️ Group is already in the available pool");
+    } else {
+      checks.push("ℹ️ Group is not yet in the pool — use /addgroup to add it");
+    }
+
+    const allPassed = checks.every((c) => !c.startsWith("❌"));
+    const summary = allPassed
+      ? "\n🎉 Group is ready to go!"
+      : "\n⚠️ Some issues need to be fixed before this group can be used.";
+
+    return ctx.reply(`Validation results for "${chat.title || groupId}":\n\n${checks.join("\n")}${summary}`);
   });
 
   // /addgroup <group_id> — pre-provision an empty group (technical admin)
@@ -86,24 +218,44 @@ Tenant management:
     return ctx.reply(`✅ Group ${groupId} added to the pool. It's now available for /register.`);
   });
 
-  // /listgroups — show available pre-configured groups
+  // /listgroups — show available pre-configured groups with validation status
   bot.command("listgroups", async (ctx) => {
     const groups = await EmptyGroup.find();
     if (groups.length === 0) {
-      return ctx.reply("No available groups. Ask the technical admin to add one with /addgroup.");
+      return ctx.reply("No available groups. Ask the technical admin to add one with /addgroup.\nSee /grouphelp for step-by-step instructions.");
     }
 
     const lines = await Promise.all(
       groups.map(async (g) => {
         let title = "Unknown";
+        let status = "❓";
         try {
           const chat = await bot.api.getChat(g.groupId);
           title = chat.title || "Untitled";
-        } catch (_) {}
-        return `• ${title} (${g.groupId}) — added ${g.createdAt.toLocaleDateString()}`;
+
+          const me = await bot.api.getMe();
+          const member = await bot.api.getChatMember(g.groupId, me.id);
+
+          const isAdmin = member.status === "administrator" || member.status === "creator";
+          const hasTopics = chat.is_forum === true;
+          const canManageTopics = member.status === "creator" || member.can_manage_topics;
+
+          if (isAdmin && hasTopics && canManageTopics) {
+            status = "✅";
+          } else {
+            const issues = [];
+            if (!isAdmin) issues.push("not admin");
+            if (!hasTopics) issues.push("topics off");
+            if (!canManageTopics) issues.push("no topic perms");
+            status = `⚠️ (${issues.join(", ")})`;
+          }
+        } catch (_) {
+          status = "❌ (no access)";
+        }
+        return `• ${status} ${title} (${g.groupId}) — added ${g.createdAt.toLocaleDateString()}`;
       })
     );
-    return ctx.reply(`📦 ${groups.length} group${groups.length === 1 ? "" : "s"} ready to assign:\n${lines.join("\n")}`);
+    return ctx.reply(`📦 ${groups.length} group${groups.length === 1 ? "" : "s"} ready to assign:\n${lines.join("\n")}\n\n✅ = ready  ⚠️ = issues  ❌ = no access\nUse /validate <group_id> for details.`);
   });
 
   // /removegroup <group_id> — remove a group from the pool
