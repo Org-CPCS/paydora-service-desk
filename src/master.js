@@ -296,8 +296,8 @@ Send /listgroups to confirm the group appears in the available pool.
       return ctx.reply("Please provide a group name.");
     }
 
-    // Check for duplicate bot token
-    const existing = await Tenant.findOne({ botToken });
+    // Check for duplicate bot token (exclude removed tenants)
+    const existing = await Tenant.findOne({ botToken, status: { $ne: "removed" } });
     if (existing) {
       return ctx.reply(`This bot token is already registered (tenant: ${existing._id}).`);
     }
