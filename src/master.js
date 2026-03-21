@@ -302,6 +302,9 @@ Send /listgroups to confirm the group appears in the available pool.
       return ctx.reply(`This bot token is already registered (tenant: ${existing._id}).`);
     }
 
+    // Clean up any removed tenant with the same token so the unique index doesn't block re-registration
+    await Tenant.deleteMany({ botToken, status: "removed" });
+
     // Validate token by calling getMe
     let meResult;
     try {

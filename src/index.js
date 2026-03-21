@@ -32,6 +32,11 @@ async function main() {
   const masterBotInfo = await masterBot.api.getMe();
   botManager.setMasterBotId(masterBotInfo.id);
 
+  // Catch Master Bot errors so they don't crash the process
+  masterBot.catch((err) => {
+    console.error("[Master] Error in Master Bot:", err.message || err);
+  });
+
   masterBot.start({
     onStart: () => console.log("[Master] Master Bot started."),
   });
