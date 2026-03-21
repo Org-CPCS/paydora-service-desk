@@ -43,6 +43,39 @@ function createSubBot(token, tenant, callbacks) {
     }
   });
 
+  // --- Detect when Master Bot is kicked from the agent group ---
+  bot.on("chat_member", async (ctx) => {
+    const update = ctx.chatMember;
+    if (update.chat.id !== agentGroupId) return;
+    if (!callbacks || !callbacks.masterBotId) return;
+
+    const member = update.new_chat_member;
+    if (member.user.id !== callbacks.masterBotId) return;
+
+    const wasIn = ["member", "administrator", "creator"].includes(update.old_chat_member.status);
+    const isOut = ["left", "kicked"].includes(member.status);
+
+    if (wasIn && isOut) {
+      console.log(`[SubBot] Tenant ${tenantId} — Master Bot was removed from agent group ${agentGroupId}`);
+
+      // Try to re-invite the Master Bot
+      try {
+        await bot.api.unbanChatMember(agentGroupId, callbacks.masterBotId, { only_if_banned: true });
+        const inviteLink = await bot.api.createChatInviteLink(agentGroupId, {
+          name: "Re-invite Master Bot",
+          member_limit: 1,
+        });
+        console.log(`[SubBot] Generated re-invite link for Master Bot: ${inviteLink.invite_link}`);
+      } catch (e) {
+        console.error(`[SubBot] Failed to create re-invite link for Master Bot:`, e.message);
+      }
+
+      if (callbacks.masterBotKicked) {
+        callbacks.masterBotKicked(tenantId.toString(), agentGroupId);
+      }
+    }
+  });
+
   // --- Customer DM handler ---
   bot.on("message", async (ctx, next) => {
     if (ctx.chat.type !== "private") return next();

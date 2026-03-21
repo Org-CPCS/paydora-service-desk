@@ -27,6 +27,11 @@ async function main() {
     process.env.SUPER_ADMIN_IDS,
     botManager
   );
+
+  // Get Master Bot's user ID so sub-bots can watch for it being kicked
+  const masterBotInfo = await masterBot.api.getMe();
+  botManager.setMasterBotId(masterBotInfo.id);
+
   masterBot.start({
     onStart: () => console.log("[Master] Master Bot started."),
   });
@@ -67,6 +72,20 @@ async function main() {
             `⚠️ Could not auto-promote the bot in group ${groupId} for tenant ${tenantId}.\nPlease promote it to admin manually.`
           );
         } catch (_) {}
+      }
+    }
+  });
+
+  // When the Master Bot is kicked from an agent group, notify admins
+  botManager.setMasterBotKickedCallback(async (tenantId, groupId) => {
+    const { Tenant } = require("./db");
+    const tenant = await Tenant.findById(tenantId);
+    const msg = `🚨 Master Bot was removed from the agent group for tenant ${tenantId} (@${tenant?.botUsername || "unknown"})!\n\nGroup ID: ${groupId}\n\nThe sub-bot is still running, but group management (rename, invite links, validation) won't work until the Master Bot is re-added as admin.\n\nPlease re-add @${masterBotInfo.username} to the group and promote it to admin.`;
+    for (const adminId of adminIds) {
+      try {
+        await masterBot.api.sendMessage(adminId, msg);
+      } catch (err) {
+        console.error(`[Main] Failed to notify admin ${adminId} about Master Bot kick:`, err.message);
       }
     }
   });

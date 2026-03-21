@@ -9,6 +9,10 @@ class BotManager {
     this.onActivation = null;
     /** @type {((tenantId: string, groupId: number, botId: number) => void) | null} */
     this.onPromoteBot = null;
+    /** @type {((tenantId: string, groupId: number) => void) | null} */
+    this.onMasterBotKicked = null;
+    /** @type {number | null} */
+    this.masterBotId = null;
   }
 
   /**
@@ -25,6 +29,22 @@ class BotManager {
    */
   setPromotionCallback(callback) {
     this.onPromoteBot = callback;
+  }
+
+  /**
+   * Set a callback that fires when the Master Bot is kicked from an agent group.
+   * @param {(tenantId: string, groupId: number) => void} callback
+   */
+  setMasterBotKickedCallback(callback) {
+    this.onMasterBotKicked = callback;
+  }
+
+  /**
+   * Set the Master Bot's Telegram user ID so sub-bots can watch for it.
+   * @param {number} botId
+   */
+  setMasterBotId(botId) {
+    this.masterBotId = botId;
   }
 
   /**
@@ -54,6 +74,10 @@ class BotManager {
       promoteBot: (tid, groupId, botId) => {
         if (this.onPromoteBot) this.onPromoteBot(tid, groupId, botId);
       },
+      masterBotKicked: (tid, groupId) => {
+        if (this.onMasterBotKicked) this.onMasterBotKicked(tid, groupId);
+      },
+      masterBotId: this.masterBotId,
     });
 
     // Attach error handler for fatal polling errors — triggers retry
@@ -75,6 +99,7 @@ class BotManager {
       onStart: () => {
         console.log(`[BotManager] Sub-Bot started for tenant ${tenantId}`);
       },
+      allowed_updates: ["message", "my_chat_member", "chat_member"],
     });
 
     this.bots.set(tenantId, { bot, startedAt });

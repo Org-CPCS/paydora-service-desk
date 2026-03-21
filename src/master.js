@@ -41,9 +41,9 @@ Example:
 /register 8631872902:AAEAmy... Mirage
 
 Step 4️⃣  Add the bot to the group
-After registering, I'll give you an invite link and the bot's username. Open the group using the invite link, then add the bot (@BotUsername) as a member and promote it to admin with topic management permissions.
+After registering, I'll give you an invite link and the bot's username. Open the group using the invite link, then add the bot (@BotUsername) as a member.
 
-Once the bot detects it's been added as admin, it will start automatically and I'll confirm here. ✅
+The bot will be promoted to admin automatically. Once that's done, it will activate and I'll confirm here. ✅
 
 ━━━━━━━━━━━━━━━━━━━━━━
 📋 All commands:
