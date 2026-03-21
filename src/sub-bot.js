@@ -126,7 +126,8 @@ function createSubBot(token, tenant, callbacks) {
         await ctx.reply("✅ Customer info sent to your DM.", { message_thread_id: threadId });
       } catch (e) {
         console.error("[SubBot] /whois error:", e.message);
-        await ctx.reply("⚠️ Couldn't send DM — make sure you've started a private chat with this bot first.", { message_thread_id: threadId });
+        const botUsername = ctx.me.username ? `@${ctx.me.username}` : "this bot";
+        await ctx.reply(`⚠️ Couldn't send DM — make sure you've started a private chat with ${botUsername} first.`, { message_thread_id: threadId });
       }
       return;
     }
