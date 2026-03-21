@@ -93,10 +93,17 @@ Tenant management:
       return ctx.reply("No available groups. Ask the technical admin to add one with /addgroup.");
     }
 
-    const lines = groups.map(
-      (g) => `• Group ${g.groupId} — added ${g.createdAt.toLocaleDateString()}`
+    const lines = await Promise.all(
+      groups.map(async (g) => {
+        let title = "Unknown";
+        try {
+          const chat = await bot.api.getChat(g.groupId);
+          title = chat.title || "Untitled";
+        } catch (_) {}
+        return `• ${title} (${g.groupId}) — added ${g.createdAt.toLocaleDateString()}`;
+      })
     );
-    return ctx.reply(`Available groups (${groups.length}):\n${lines.join("\n")}`);
+    return ctx.reply(`📦 ${groups.length} group${groups.length === 1 ? "" : "s"} ready to assign:\n${lines.join("\n")}`);
   });
 
   // /removegroup <group_id> — remove a group from the pool
