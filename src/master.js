@@ -209,7 +209,7 @@ Send /listgroups to confirm the group appears in the available pool.
       return ctx.reply(`Group ${groupId} is already in the pool.`);
     }
 
-    const existingTenant = await Tenant.findOne({ agentGroupId: groupId });
+    const existingTenant = await Tenant.findOne({ agentGroupId: groupId, status: { $ne: "removed" } });
     if (existingTenant) {
       return ctx.reply(`Group ${groupId} is already assigned to tenant ${existingTenant._id}.`);
     }
