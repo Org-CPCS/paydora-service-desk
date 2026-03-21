@@ -37,7 +37,7 @@ Send this command:
 The display_name is the name you want for this tenant's support group (e.g. your company or brand name). It doesn't need to match any existing group name — the system will rename the assigned group for you.
 
 Example:
-/register 7123456789:AAHxyz... Acme Support
+/register 7123456789:AAHxyz... Yanis Support
 /register 8631872902:AAEAmy... Mirage
 
 Step 4️⃣  Add the bot to the group
