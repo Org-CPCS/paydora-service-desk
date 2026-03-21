@@ -258,7 +258,7 @@ Send /listgroups to confirm the group appears in the available pool.
         return `• ${status} ${title} (${g.groupId}) — added ${g.createdAt.toLocaleDateString()}`;
       })
     );
-    return ctx.reply(`📦 ${groups.length} group${groups.length === 1 ? "" : "s"} ready to assign:\n${lines.join("\n")}\n\n✅ = ready  ⚠️ = issues  ❌ = no access\nUse /validate <group_id> for details.`);
+    return ctx.reply(`📦 ${groups.length} group${groups.length === 1 ? "" : "s"} ready to assign:\n${lines.join("\n")}\n\n✅ = ready  ⚠️ = issues  ❌ = no access\nUse /validate <group_id> for details.\nUse /register <bot_token> <display_name> to add a tenant.`);
   });
 
   // /removegroup <group_id> — remove a group from the pool
