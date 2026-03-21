@@ -32,10 +32,13 @@ Open Telegram, search for @BotFather, send /newbot, and follow the prompts. You'
 
 Step 3️⃣  Register
 Send this command:
-/register <bot_token> <group_name>
+/register <bot_token> <display_name>
+
+The display_name is the name you want for this tenant's support group (e.g. your company or brand name). It doesn't need to match any existing group name — the system will rename the assigned group for you.
 
 Example:
-/register 7123456789:AAHxyz Acme Support
+/register 7123456789:AAHxyz... Acme Support
+/register 8631872902:AAEAmy... Mirage
 
 Step 4️⃣  Add the bot to the group
 After registering, I'll give you an invite link and the bot's username. Open the group using the invite link, then add the bot (@BotUsername) as a member and promote it to admin with topic management permissions.
