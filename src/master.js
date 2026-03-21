@@ -349,16 +349,20 @@ Send /listgroups to confirm the group appears in the available pool.
     // Remove from empty groups pool
     await EmptyGroup.deleteOne({ _id: emptyGroup._id });
 
+    // Reply with success before starting the bot (startBot can take time)
+    await ctx.reply(
+      `✅ Tenant created (pending bot setup)!\n\nBot: @${meResult.username}\nGroup: ${groupName}\nTenant ID: ${tenant._id}\n\n🔗 Group invite link:\n${inviteLink}\n\n👉 Next step: Open the group and add @${meResult.username} as a member.\n\nThe bot will be promoted to admin automatically. Once that's done, it will activate and I'll confirm here.`
+    );
+
     // Start the sub-bot so it can listen for my_chat_member updates
     try {
       await botManager.startBot(tenant);
     } catch (err) {
       console.error(`[MasterBot] Failed to start Sub-Bot for tenant ${tenant._id}:`, err.message);
+      await ctx.reply(`⚠️ Sub-Bot failed to start: ${err.message}\nThe tenant was created but the bot isn't running. Try /start ${tenant._id} later.`);
     }
 
-    return ctx.reply(
-      `✅ Tenant created (pending bot setup)!\n\nBot: @${meResult.username}\nGroup: ${groupName}\nTenant ID: ${tenant._id}\n\n🔗 Group invite link:\n${inviteLink}\n\n👉 Next step: Open the group and add @${meResult.username} as a member, then promote it to admin with topic management permissions.\n\nOnce the bot is admin, it will activate automatically.`
-    );
+    return;
   });
 
   // /stop <tenant_id>
