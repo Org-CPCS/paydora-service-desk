@@ -101,9 +101,8 @@ function createSubBot(token, tenant, callbacks) {
   bot.on("message", async (ctx) => {
     if (ctx.chat.id !== agentGroupId) return;
 
-    console.log(`[SubBot][DEBUG] Group message from user ${ctx.from.id} (is_bot: ${ctx.from.is_bot}), threadId: ${ctx.message.message_thread_id}, text: ${ctx.message.text?.slice(0, 50) || "[non-text]"}`);
-
-    if (ctx.from.is_bot) return;
+    // Skip messages sent by this bot itself (but allow other bots/channels)
+    if (ctx.from.id === ctx.me.id) return;
 
     const threadId = ctx.message.message_thread_id;
     if (!threadId) return;
