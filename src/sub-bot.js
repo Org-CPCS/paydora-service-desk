@@ -100,6 +100,9 @@ function createSubBot(token, tenant, callbacks) {
   // --- Agent group handler ---
   bot.on("message", async (ctx) => {
     if (ctx.chat.id !== agentGroupId) return;
+
+    console.log(`[SubBot][DEBUG] Group message from user ${ctx.from.id} (is_bot: ${ctx.from.is_bot}), threadId: ${ctx.message.message_thread_id}, text: ${ctx.message.text?.slice(0, 50) || "[non-text]"}`);
+
     if (ctx.from.is_bot) return;
 
     const threadId = ctx.message.message_thread_id;
