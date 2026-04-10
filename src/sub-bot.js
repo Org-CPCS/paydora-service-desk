@@ -122,14 +122,19 @@ function createSubBot(token, tenant, callbacks) {
       const tagText = ctx.message.text.slice(4).trim();
 
       // --- Reply-based: reply to a message with /tag Title ---
-      if (ctx.message.reply_to_message) {
+      // In forum groups, reply_to_message may point to the topic creation message,
+      // so we also check that the replied message has a real sender
+      const repliedMsg = ctx.message.reply_to_message;
+      const isRealReply = repliedMsg && repliedMsg.from && !repliedMsg.forum_topic_created;
+
+      if (isRealReply) {
         if (!tagText) {
           return ctx.reply("Usage: reply to a message with /tag Title", replyOpts);
         }
         const title = tagText.slice(0, 16);
-        const targetUserId = ctx.message.reply_to_message.from?.id;
-        if (!targetUserId || ctx.message.reply_to_message.from.is_bot) {
-          return ctx.reply("⚠️ Can't tag bots or unknown users.", replyOpts);
+        const targetUserId = repliedMsg.from.id;
+        if (repliedMsg.from.is_bot) {
+          return ctx.reply("⚠️ Can't tag bots.", replyOpts);
         }
 
         try {
@@ -149,7 +154,7 @@ function createSubBot(token, tenant, callbacks) {
           });
 
           await bot.api.setChatAdministratorCustomTitle(agentGroupId, targetUserId, title);
-          await ctx.reply(`✅ Set title "${title}" for ${ctx.message.reply_to_message.from.first_name}.`, replyOpts);
+          await ctx.reply(`✅ Set title "${title}" for ${repliedMsg.from.first_name}.`, replyOpts);
         } catch (e) {
           console.error("[SubBot] /tag (reply) error:", e.message);
           await ctx.reply(`⚠️ Failed to set tag: ${e.message}`, replyOpts);
@@ -163,7 +168,7 @@ function createSubBot(token, tenant, callbacks) {
         return ctx.reply("Usage: /tag @username Title\nOr: /tag <user_id> Title\nOr reply to a message with: /tag Title", replyOpts);
       }
 
-      const identifier = parts[0];
+      const identifier = parts[0].replace(/^@/, ""); // strip leading @ if typed manually
       const title = parts.slice(1).join(" ").slice(0, 16);
 
       let targetUserId = null;
@@ -193,12 +198,12 @@ function createSubBot(token, tenant, callbacks) {
         }
       }
 
-      // 2. If no entity matched, try parsing as numeric user ID
+      // 2. Try parsing as numeric user ID
       if (!targetUserId && /^\d+$/.test(identifier)) {
         targetUserId = Number(identifier);
       }
 
-      // 3. If still nothing, try as a plain username (without @)
+      // 3. Try as a plain username (without @)
       if (!targetUserId && /^[a-zA-Z][a-zA-Z0-9_]{3,31}$/.test(identifier)) {
         const username = identifier.toLowerCase();
         try {
