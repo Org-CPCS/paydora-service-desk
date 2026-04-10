@@ -140,8 +140,9 @@ function createSubBot(token, tenant, callbacks) {
         }
 
         try {
+          console.log(`[SubBot] /tag: promoting user ${targetUserId} in group ${agentGroupId}...`);
           await bot.api.promoteChatMember(agentGroupId, targetUserId, {
-            can_manage_chat: false,
+            can_manage_chat: true,
             can_delete_messages: false,
             can_manage_video_chats: false,
             can_restrict_members: false,
@@ -154,9 +155,15 @@ function createSubBot(token, tenant, callbacks) {
             can_pin_messages: false,
             can_manage_topics: false,
           });
+          console.log(`[SubBot] /tag: promote succeeded, waiting before setting title...`);
 
           await sleep(1500);
+
+          const member = await bot.api.getChatMember(agentGroupId, targetUserId);
+          console.log(`[SubBot] /tag: user status after promote: ${member.status}`);
+
           await bot.api.setChatAdministratorCustomTitle(agentGroupId, targetUserId, title);
+          console.log(`[SubBot] /tag: title set successfully`);
           await ctx.reply(`✅ Set title "${title}" for ${repliedMsg.from.first_name}.`, replyOpts);
         } catch (e) {
           console.error("[SubBot] /tag (reply) error:", e.message);
@@ -231,8 +238,9 @@ function createSubBot(token, tenant, callbacks) {
       }
 
       try {
+        console.log(`[SubBot] /tag: promoting user ${targetUserId} in group ${agentGroupId}...`);
         await bot.api.promoteChatMember(agentGroupId, targetUserId, {
-          can_manage_chat: false,
+          can_manage_chat: true,
           can_delete_messages: false,
           can_manage_video_chats: false,
           can_restrict_members: false,
@@ -245,9 +253,15 @@ function createSubBot(token, tenant, callbacks) {
           can_pin_messages: false,
           can_manage_topics: false,
         });
+        console.log(`[SubBot] /tag: promote succeeded, waiting before setting title...`);
 
         await sleep(1500);
+
+        const member = await bot.api.getChatMember(agentGroupId, targetUserId);
+        console.log(`[SubBot] /tag: user status after promote: ${member.status}`);
+
         await bot.api.setChatAdministratorCustomTitle(agentGroupId, targetUserId, title);
+        console.log(`[SubBot] /tag: title set successfully`);
         await ctx.reply(`✅ Set title "${title}" for user.`, replyOpts);
       } catch (e) {
         console.error("[SubBot] /tag error:", e.message);
