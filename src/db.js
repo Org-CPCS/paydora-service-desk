@@ -66,4 +66,17 @@ const emptyGroupSchema = new mongoose.Schema({
 
 const EmptyGroup = mongoose.model("EmptyGroup", emptyGroupSchema);
 
-module.exports = { connect, Tenant, Customer, EmptyGroup, getNextAlias };
+// Cache of group members — maps username to user ID for @mention resolution
+const groupMemberSchema = new mongoose.Schema({
+  groupId: { type: Number, required: true },
+  userId: { type: Number, required: true },
+  username: { type: String, required: true },
+  updatedAt: { type: Date, default: Date.now },
+});
+
+groupMemberSchema.index({ groupId: 1, username: 1 }, { unique: true });
+groupMemberSchema.index({ groupId: 1, userId: 1 }, { unique: true });
+
+const GroupMember = mongoose.model("GroupMember", groupMemberSchema);
+
+module.exports = { connect, Tenant, Customer, EmptyGroup, GroupMember, getNextAlias };

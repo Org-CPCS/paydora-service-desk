@@ -1,5 +1,5 @@
 const { Bot } = require("grammy");
-const { Customer, Tenant } = require("./db");
+const { Customer, Tenant, GroupMember } = require("./db");
 const { getOrCreateCustomer, relayToAgents, relayToCustomer } = require("./relay");
 
 /**
@@ -104,20 +104,71 @@ function createSubBot(token, tenant, callbacks) {
     // Skip messages sent by this bot itself (but allow other bots/channels)
     if (ctx.from.id === ctx.me.id) return;
 
+    // Cache the sender's username → userId for @mention resolution
+    if (ctx.from.username) {
+      GroupMember.findOneAndUpdate(
+        { groupId: agentGroupId, username: ctx.from.username.toLowerCase() },
+        { userId: ctx.from.id, updatedAt: new Date() },
+        { upsert: true }
+      ).catch(() => {});
+    }
+
     const threadId = ctx.message.message_thread_id;
     const replyOpts = threadId ? { message_thread_id: threadId } : {};
 
-    // /tag @username Title — promote user to admin (no perms) and set custom title
-    if (ctx.message.text && ctx.message.text.startsWith("/tag ")) {
-      const parts = ctx.message.text.slice(5).trim().split(/\s+/);
-      if (parts.length < 2) {
-        return ctx.reply("Usage: /tag @username Title", replyOpts);
+    // /tag — set a custom title for a group member
+    // Priority: reply-based first, then @mention-based
+    if (ctx.message.text && /^\/tag(\s|$)/.test(ctx.message.text)) {
+      const tagText = ctx.message.text.slice(4).trim();
+
+      // --- Reply-based: reply to a message with /tag Title ---
+      if (ctx.message.reply_to_message) {
+        if (!tagText) {
+          return ctx.reply("Usage: reply to a message with /tag Title", replyOpts);
+        }
+        const title = tagText.slice(0, 16);
+        const targetUserId = ctx.message.reply_to_message.from?.id;
+        if (!targetUserId || ctx.message.reply_to_message.from.is_bot) {
+          return ctx.reply("⚠️ Can't tag bots or unknown users.", replyOpts);
+        }
+
+        try {
+          await bot.api.promoteChatMember(agentGroupId, targetUserId, {
+            can_manage_chat: false,
+            can_delete_messages: false,
+            can_manage_video_chats: false,
+            can_restrict_members: false,
+            can_promote_members: false,
+            can_change_info: false,
+            can_invite_users: false,
+            can_post_stories: false,
+            can_edit_stories: false,
+            can_delete_stories: false,
+            can_pin_messages: false,
+            can_manage_topics: false,
+          });
+
+          await bot.api.setChatAdministratorCustomTitle(agentGroupId, targetUserId, title);
+          await ctx.reply(`✅ Set title "${title}" for ${ctx.message.reply_to_message.from.first_name}.`, replyOpts);
+        } catch (e) {
+          console.error("[SubBot] /tag (reply) error:", e.message);
+          await ctx.reply(`⚠️ Failed to set tag: ${e.message}`, replyOpts);
+        }
+        return;
       }
 
-      const title = parts.slice(1).join(" ").slice(0, 16); // Telegram limits to 16 chars
+      // --- Mention, username, or user ID: /tag <target> Title ---
+      const parts = tagText.split(/\s+/);
+      if (parts.length < 2) {
+        return ctx.reply("Usage: /tag @username Title\nOr: /tag <user_id> Title\nOr reply to a message with: /tag Title", replyOpts);
+      }
 
-      // Resolve user ID from mention or text_entities
+      const identifier = parts[0];
+      const title = parts.slice(1).join(" ").slice(0, 16);
+
       let targetUserId = null;
+
+      // 1. Check text_mention entities (rich mentions from Telegram autocomplete)
       const entities = ctx.message.entities || [];
       for (const entity of entities) {
         if (entity.type === "text_mention" && entity.user) {
@@ -125,17 +176,50 @@ function createSubBot(token, tenant, callbacks) {
           break;
         }
         if (entity.type === "mention") {
-          const username = ctx.message.text.substring(entity.offset + 1, entity.offset + entity.length);
+          const username = ctx.message.text.substring(entity.offset + 1, entity.offset + entity.length).toLowerCase();
           try {
-            const member = await bot.api.getChatMember(agentGroupId, username);
-            targetUserId = member.user.id;
+            const cached = await GroupMember.findOne({ groupId: agentGroupId, username });
+            if (cached) {
+              targetUserId = cached.userId;
+            } else {
+              const admins = await bot.api.getChatAdministrators(agentGroupId);
+              const match = admins.find(
+                (m) => m.user.username && m.user.username.toLowerCase() === username
+              );
+              if (match) targetUserId = match.user.id;
+            }
           } catch (_) {}
           break;
         }
       }
 
+      // 2. If no entity matched, try parsing as numeric user ID
+      if (!targetUserId && /^\d+$/.test(identifier)) {
+        targetUserId = Number(identifier);
+      }
+
+      // 3. If still nothing, try as a plain username (without @)
+      if (!targetUserId && /^[a-zA-Z][a-zA-Z0-9_]{3,31}$/.test(identifier)) {
+        const username = identifier.toLowerCase();
+        try {
+          const cached = await GroupMember.findOne({ groupId: agentGroupId, username });
+          if (cached) {
+            targetUserId = cached.userId;
+          } else {
+            const admins = await bot.api.getChatAdministrators(agentGroupId);
+            const match = admins.find(
+              (m) => m.user.username && m.user.username.toLowerCase() === username
+            );
+            if (match) targetUserId = match.user.id;
+          }
+        } catch (_) {}
+      }
+
       if (!targetUserId) {
-        return ctx.reply("⚠️ Couldn't resolve that user. Try replying to one of their messages with /tag Title instead.", replyOpts);
+        return ctx.reply(
+          "⚠️ Couldn't resolve that user. This can happen if they aren't an admin yet.\n\nTry replying to one of their messages with:\n/tag Title",
+          replyOpts
+        );
       }
 
       try {
@@ -158,43 +242,6 @@ function createSubBot(token, tenant, callbacks) {
         await ctx.reply(`✅ Set title "${title}" for user.`, replyOpts);
       } catch (e) {
         console.error("[SubBot] /tag error:", e.message);
-        await ctx.reply(`⚠️ Failed to set tag: ${e.message}`, replyOpts);
-      }
-      return;
-    }
-
-    // /tag Title — reply-based variant (reply to a user's message)
-    if (ctx.message.text && ctx.message.text.startsWith("/tag") && ctx.message.reply_to_message) {
-      const title = ctx.message.text.slice(4).trim().slice(0, 16);
-      if (!title) {
-        return ctx.reply("Usage: reply to a message with /tag Title", replyOpts);
-      }
-
-      const targetUserId = ctx.message.reply_to_message.from?.id;
-      if (!targetUserId || ctx.message.reply_to_message.from.is_bot) {
-        return ctx.reply("⚠️ Can't tag bots or unknown users.", replyOpts);
-      }
-
-      try {
-        await bot.api.promoteChatMember(agentGroupId, targetUserId, {
-          can_manage_chat: false,
-          can_delete_messages: false,
-          can_manage_video_chats: false,
-          can_restrict_members: false,
-          can_promote_members: false,
-          can_change_info: false,
-          can_invite_users: false,
-          can_post_stories: false,
-          can_edit_stories: false,
-          can_delete_stories: false,
-          can_pin_messages: false,
-          can_manage_topics: false,
-        });
-
-        await bot.api.setChatAdministratorCustomTitle(agentGroupId, targetUserId, title);
-        await ctx.reply(`✅ Set title "${title}" for ${ctx.message.reply_to_message.from.first_name}.`, replyOpts);
-      } catch (e) {
-        console.error("[SubBot] /tag (reply) error:", e.message);
         await ctx.reply(`⚠️ Failed to set tag: ${e.message}`, replyOpts);
       }
       return;
