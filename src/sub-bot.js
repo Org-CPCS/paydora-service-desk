@@ -2,6 +2,8 @@ const { Bot } = require("grammy");
 const { Customer, Tenant, GroupMember } = require("./db");
 const { getOrCreateCustomer, relayToAgents, relayToCustomer } = require("./relay");
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 /**
  * Creates a configured grammY Bot instance for a tenant.
  * @param {string} token - Telegram bot token
@@ -153,6 +155,7 @@ function createSubBot(token, tenant, callbacks) {
             can_manage_topics: false,
           });
 
+          await sleep(1500);
           await bot.api.setChatAdministratorCustomTitle(agentGroupId, targetUserId, title);
           await ctx.reply(`✅ Set title "${title}" for ${repliedMsg.from.first_name}.`, replyOpts);
         } catch (e) {
@@ -243,6 +246,7 @@ function createSubBot(token, tenant, callbacks) {
           can_manage_topics: false,
         });
 
+        await sleep(1500);
         await bot.api.setChatAdministratorCustomTitle(agentGroupId, targetUserId, title);
         await ctx.reply(`✅ Set title "${title}" for user.`, replyOpts);
       } catch (e) {
