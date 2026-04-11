@@ -65,6 +65,7 @@ async function main() {
         can_invite_users: true,
         can_pin_messages: true,
         can_manage_chat: true,
+        can_promote_members: true,
       });
       console.log(`[Main] Promoted sub-bot ${botId} to admin in group ${groupId}`);
     } catch (err) {

@@ -326,6 +326,22 @@ function createSubBot(token, tenant, callbacks) {
       return;
     }
 
+    // /rename New Name — rename the current topic
+    if (ctx.message.text && ctx.message.text.startsWith("/rename ")) {
+      const newName = ctx.message.text.slice(8).trim();
+      if (!newName) {
+        return ctx.reply("Usage: /rename New Topic Name", { message_thread_id: threadId });
+      }
+      try {
+        await bot.api.editForumTopic(agentGroupId, threadId, { name: newName.slice(0, 128) });
+        await ctx.reply(`✅ Topic renamed to "${newName.slice(0, 128)}".`, { message_thread_id: threadId });
+      } catch (e) {
+        console.error("[SubBot] /rename error:", e.message);
+        await ctx.reply(`⚠️ Failed to rename: ${e.message}`, { message_thread_id: threadId });
+      }
+      return;
+    }
+
     // Regular agent reply — relay to customer
     await relayToCustomer(bot, tenantId, threadId, ctx.message);
   });
