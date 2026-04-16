@@ -316,12 +316,9 @@ function createSubBot(token, tenant, callbacks) {
       await customer.save();
       await ctx.reply(`🚫 ${customer.alias} has been blocked. They will no longer be able to send messages.`, { message_thread_id: threadId });
       try {
-        await bot.api.editForumTopic(agentGroupId, threadId, {
-          name: `[blocked] ${customer.alias}`,
-        });
         await bot.api.closeForumTopic(agentGroupId, threadId);
       } catch (e) {
-        console.error("Failed to close/rename topic after block:", e.message);
+        console.error("Failed to close topic after block:", e.message);
       }
       return;
     }
@@ -339,12 +336,9 @@ function createSubBot(token, tenant, callbacks) {
       await customer.save();
       await ctx.reply(`✅ ${customer.alias} has been unblocked.`, { message_thread_id: threadId });
       try {
-        await bot.api.editForumTopic(agentGroupId, threadId, {
-          name: customer.alias,
-        });
         await bot.api.reopenForumTopic(agentGroupId, threadId);
       } catch (e) {
-        console.error("Failed to reopen/rename topic after unblock:", e.message);
+        console.error("Failed to reopen topic after unblock:", e.message);
       }
       return;
     }
