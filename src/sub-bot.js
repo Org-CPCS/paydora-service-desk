@@ -85,7 +85,7 @@ function createSubBot(token, tenant, callbacks) {
     // /start command — welcome message
     if (ctx.message.text === "/start") {
       return ctx.reply(
-        "Hey there 👋 Thank you for messaging us! Just type your question or describe your issue and one of our team members will be with you shortly. We're happy to help!"
+        "Hey there 👋 Thank you for messaging us!\n\nJust type your question or describe your issue and one of our team members will be with you shortly. We're happy to help!"
       );
     }
 
@@ -339,6 +339,9 @@ function createSubBot(token, tenant, callbacks) {
         await bot.api.reopenForumTopic(agentGroupId, threadId);
       } catch (e) {
         console.error("Failed to reopen topic after unblock:", e.message);
+      } await bot.api.reopenForumTopic(agentGroupId, threadId);
+      } catch (e) {
+        console.error("Failed to reopen/rename topic after unblock:", e.message);
       }
       return;
     }
