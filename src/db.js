@@ -30,7 +30,7 @@ const customerSchema = new mongoose.Schema({
   telegramUserId: { type: Number, required: true },
   alias: { type: String, required: true },
   threadId: { type: Number, default: null }, // topic message_thread_id
-  status: { type: String, enum: ["open", "closed"], default: "open" },
+  status: { type: String, enum: ["open", "closed", "blocked"], default: "open" },
   createdAt: { type: Date, default: Date.now },
 });
 

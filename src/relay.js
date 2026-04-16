@@ -5,6 +5,9 @@ const { scrub } = require("./pii");
 async function getOrCreateCustomer(bot, tenantId, telegramUserId, fromUser, agentGroupId) {
   let customer = await Customer.findOne({ tenantId, telegramUserId });
   if (customer && customer.threadId) {
+    // Don't reopen blocked conversations
+    if (customer.status === "blocked") return customer;
+
     // Reopen if the conversation was closed
     if (customer.status === "closed") {
       customer.status = "open";

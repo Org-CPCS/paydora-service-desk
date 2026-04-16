@@ -96,6 +96,10 @@ function createSubBot(token, tenant, callbacks) {
       ctx.from,
       agentGroupId
     );
+
+    // Only block messages from explicitly blocked customers
+    if (customer.status === "blocked") return;
+
     await relayToAgents(bot, customer, ctx.message, agentGroupId);
   });
 
@@ -295,6 +299,52 @@ function createSubBot(token, tenant, callbacks) {
         console.error("[SubBot] /whois error:", e.message);
         const botUsername = ctx.me.username ? `@${ctx.me.username}` : "this bot";
         await ctx.reply(`⚠️ Couldn't send DM — make sure you've started a private chat with ${botUsername} first.`, { message_thread_id: threadId });
+      }
+      return;
+    }
+
+    // /blockuser — block the customer in this topic
+    if (ctx.message.text === "/blockuser") {
+      const customer = await Customer.findOne({ tenantId, threadId });
+      if (!customer) {
+        return ctx.reply("❓ No customer found for this topic.", { message_thread_id: threadId });
+      }
+      if (customer.status === "blocked") {
+        return ctx.reply("ℹ️ This user is already blocked.", { message_thread_id: threadId });
+      }
+      customer.status = "blocked";
+      await customer.save();
+      await ctx.reply(`🚫 ${customer.alias} has been blocked. They will no longer be able to send messages.`, { message_thread_id: threadId });
+      try {
+        await bot.api.editForumTopic(agentGroupId, threadId, {
+          name: `[blocked] ${customer.alias}`,
+        });
+        await bot.api.closeForumTopic(agentGroupId, threadId);
+      } catch (e) {
+        console.error("Failed to close/rename topic after block:", e.message);
+      }
+      return;
+    }
+
+    // /unblockuser — unblock the customer in this topic
+    if (ctx.message.text === "/unblockuser") {
+      const customer = await Customer.findOne({ tenantId, threadId });
+      if (!customer) {
+        return ctx.reply("❓ No customer found for this topic.", { message_thread_id: threadId });
+      }
+      if (customer.status !== "blocked") {
+        return ctx.reply("ℹ️ This user is not blocked.", { message_thread_id: threadId });
+      }
+      customer.status = "open";
+      await customer.save();
+      await ctx.reply(`✅ ${customer.alias} has been unblocked.`, { message_thread_id: threadId });
+      try {
+        await bot.api.editForumTopic(agentGroupId, threadId, {
+          name: customer.alias,
+        });
+        await bot.api.reopenForumTopic(agentGroupId, threadId);
+      } catch (e) {
+        console.error("Failed to reopen/rename topic after unblock:", e.message);
       }
       return;
     }
