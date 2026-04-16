@@ -85,7 +85,7 @@ function createSubBot(token, tenant, callbacks) {
     // /start command — welcome message
     if (ctx.message.text === "/start") {
       return ctx.reply(
-        "Hey there 👋 Welcome to Paydora Support!\n\nJust type your question or describe your issue and one of our team members will be with you shortly. We're happy to help!"
+        "Hey there 👋 Thank you for messaging us! Just type your question or describe your issue and one of our team members will be with you shortly. We're happy to help!"
       );
     }
 
