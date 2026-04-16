@@ -339,9 +339,6 @@ function createSubBot(token, tenant, callbacks) {
         await bot.api.reopenForumTopic(agentGroupId, threadId);
       } catch (e) {
         console.error("Failed to reopen topic after unblock:", e.message);
-      } await bot.api.reopenForumTopic(agentGroupId, threadId);
-      } catch (e) {
-        console.error("Failed to reopen/rename topic after unblock:", e.message);
       }
       return;
     }
