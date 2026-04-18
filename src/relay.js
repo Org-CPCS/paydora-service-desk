@@ -112,15 +112,15 @@ async function relayToCustomer(bot, tenantId, threadId, msg) {
   const customer = await Customer.findOne({ tenantId, threadId });
   if (!customer) return;
 
-  // Web customers — POST to the tenant's webhook instead of Telegram DM
+  // Web customers — POST to the CPCS webhook
   if (customer.source === "web") {
     console.log(`[relay] Web customer detected: alias=${customer.alias}, externalUserId=${customer.externalUserId}`);
-    const tenant = await Tenant.findById(tenantId);
-    if (!tenant || !tenant.webhookUrl) {
-      console.error(`[relay] No webhookUrl configured for tenant ${tenantId}`);
+    const webhookUrl = process.env.CHAT_WEBHOOK_URL;
+    if (!webhookUrl) {
+      console.error(`[relay] CHAT_WEBHOOK_URL env var not set — cannot relay to web customer`);
       return;
     }
-    console.log(`[relay] Webhook URL: ${tenant.webhookUrl}`);
+    console.log(`[relay] Webhook URL: ${webhookUrl}`);
 
     let text = null;
     let telegramFileId = null;
@@ -161,7 +161,7 @@ async function relayToCustomer(bot, tenantId, threadId, msg) {
 
     try {
       console.log(`[relay] Sending webhook POST: alias=${customer.alias}, contentType=${contentType}, hasText=${!!text}, hasFileId=${!!telegramFileId}`);
-      const res = await fetch(tenant.webhookUrl, {
+      const res = await fetch(webhookUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
