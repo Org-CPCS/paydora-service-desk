@@ -18,6 +18,12 @@ async function main() {
   // Connect to MongoDB
   await db.connect();
 
+  // In dry-run mode, skip Telegram connections entirely
+  if (process.env.DRY_RUN === "true") {
+    console.log("[Main] DRY_RUN mode — skipping Telegram bot startup.");
+    return;
+  }
+
   // Create Bot Manager
   const botManager = new BotManager();
 
