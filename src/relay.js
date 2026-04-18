@@ -1,8 +1,8 @@
-const { Customer, getNextAlias } = require("./db");
+const { Customer, Tenant, getNextAlias } = require("./db");
 const { scrub } = require("./pii");
 
 // Get or create a customer record + topic (tenant-scoped)
-async function getOrCreateCustomer(bot, tenantId, telegramUserId, fromUser, agentGroupId) {
+async function getOrCreateCustomer(bot, tenantId, telegramUserId, fromUser, agentGroupId, { source, externalUserId } = {}) {
   let customer = await Customer.findOne({ tenantId, telegramUserId });
   if (customer && customer.threadId) {
     // Don't reopen blocked conversations
@@ -33,7 +33,10 @@ async function getOrCreateCustomer(bot, tenantId, telegramUserId, fromUser, agen
   if (!customer) {
     const initial = fromUser?.first_name;
     const alias = await getNextAlias(tenantId, initial);
-    customer = await Customer.create({ tenantId, telegramUserId, alias });
+    const customerData = { tenantId, telegramUserId, alias };
+    if (source) customerData.source = source;
+    if (externalUserId) customerData.externalUserId = externalUserId;
+    customer = await Customer.create(customerData);
   }
 
   // Create a topic in the agent group
@@ -109,6 +112,75 @@ async function relayToCustomer(bot, tenantId, threadId, msg) {
   const customer = await Customer.findOne({ tenantId, threadId });
   if (!customer) return;
 
+  // Web customers — POST to the tenant's webhook instead of Telegram DM
+  if (customer.source === "web") {
+    console.log(`[relay] Web customer detected: alias=${customer.alias}, externalUserId=${customer.externalUserId}`);
+    const tenant = await Tenant.findById(tenantId);
+    if (!tenant || !tenant.webhookUrl) {
+      console.error(`[relay] No webhookUrl configured for tenant ${tenantId}`);
+      return;
+    }
+    console.log(`[relay] Webhook URL: ${tenant.webhookUrl}`);
+
+    let text = null;
+    let telegramFileId = null;
+    let contentType = "text";
+
+    if (msg.text) {
+      text = msg.text;
+    } else if (msg.photo) {
+      const photo = msg.photo[msg.photo.length - 1];
+      telegramFileId = photo.file_id;
+      contentType = "image";
+      text = msg.caption || null;
+    } else if (msg.document) {
+      telegramFileId = msg.document.file_id;
+      contentType = "image";
+      text = msg.caption || null;
+    } else if (msg.voice) {
+      telegramFileId = msg.voice.file_id;
+      contentType = "text";
+      text = "[voice message]";
+    } else if (msg.video) {
+      telegramFileId = msg.video.file_id;
+      contentType = "image";
+      text = msg.caption || null;
+    } else if (msg.sticker) {
+      text = "[sticker]";
+    } else {
+      text = "[unsupported message type]";
+    }
+
+    const payload = {
+      tenantId: tenantId.toString(),
+      customerAlias: customer.alias,
+      text,
+      telegramFileId,
+      contentType,
+    };
+
+    try {
+      console.log(`[relay] Sending webhook POST: alias=${customer.alias}, contentType=${contentType}, hasText=${!!text}, hasFileId=${!!telegramFileId}`);
+      const res = await fetch(tenant.webhookUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-webhook-secret": process.env.CHAT_WEBHOOK_SECRET || "",
+        },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        console.error(`[relay] Webhook POST failed: ${res.status} ${res.statusText}`);
+      } else {
+        console.log(`[relay] Webhook POST success: ${res.status}`);
+      }
+    } catch (err) {
+      console.error(`[relay] Webhook POST error:`, err.message);
+    }
+    return;
+  }
+
+  // Telegram customers — existing DM behavior
   const chatId = customer.telegramUserId;
 
   if (msg.text) {

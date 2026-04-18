@@ -10,6 +10,7 @@ const tenantSchema = new mongoose.Schema({
   botToken: { type: String, required: true, unique: true },
   botUsername: { type: String },
   agentGroupId: { type: Number, required: true },
+  webhookUrl: { type: String, default: null },
   status: {
     type: String,
     enum: ["active", "inactive", "removed", "pending"],
@@ -31,6 +32,8 @@ const customerSchema = new mongoose.Schema({
   alias: { type: String, required: true },
   threadId: { type: Number, default: null }, // topic message_thread_id
   status: { type: String, enum: ["open", "closed", "blocked"], default: "open" },
+  source: { type: String, enum: ["telegram", "web"], default: "telegram" },
+  externalUserId: { type: String, default: null },
   createdAt: { type: Date, default: Date.now },
 });
 

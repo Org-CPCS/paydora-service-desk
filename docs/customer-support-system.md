@@ -117,6 +117,12 @@ Agent Maria: "Hi! Could you share your order number?"
 
 ---
 
+## Web Chat Integration (Tenant Configuration)
+
+When a tenant is configured to support web-based customers (from the CPCS frontend), the tenant record must include a `webhookUrl` field. This URL points to the CPCS backend webhook endpoint (e.g. `https://<cpcs-host>/v1/chat/webhook`). When an agent replies to a web-sourced customer, the bot POSTs the message to this URL instead of sending a Telegram DM. The request includes an `x-webhook-secret` header for authentication (see `CHAT_WEBHOOK_SECRET` in `.env.example`).
+
+---
+
 ## Open Questions / Future Enhancements
 
 - Should conversations auto-close after inactivity?
