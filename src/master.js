@@ -59,6 +59,7 @@ Tenant management:
 /register <bot_token> <group_name> — Register a new tenant
 /list — See all registered tenants
 /listusers <tenant_id> — List all customers for a tenant
+/message <tenant_id> <user_id> <text> — Message a customer via sub-bot
 /status <tenant_id> — Check a tenant's status
 /stop <tenant_id> — Pause a tenant
 /start <tenant_id> — Resume a tenant
@@ -422,6 +423,38 @@ Send /listgroups to confirm the group appears in the available pool.
     return ctx.reply(`Registered tenants:\n${lines.join("\n")}`);
   });
 
+  // /message <tenant_id> <telegram_user_id> <text> — send a message to a customer via the sub-bot
+  bot.command("message", async (ctx) => {
+    const input = (ctx.match || "").trim();
+    const parts = input.split(/\s+/);
+    if (parts.length < 3) {
+      return ctx.reply("Usage: /message <tenant_id> <telegram_user_id> <text>");
+    }
+
+    const tenantId = parts[0];
+    const userId = Number(parts[1]);
+    const text = input.slice(input.indexOf(parts[2]));
+
+    if (!Number.isFinite(userId)) {
+      return ctx.reply("Invalid telegram_user_id — must be a number.");
+    }
+
+    const tenant = await Tenant.findById(tenantId);
+    if (!tenant) return ctx.reply(`Tenant ${tenantId} not found.`);
+
+    const entry = botManager.bots.get(tenantId);
+    if (!entry) {
+      return ctx.reply(`Sub-bot for tenant ${tenantId} is not running. Try /start ${tenantId} first.`);
+    }
+
+    try {
+      await entry.bot.api.sendMessage(userId, text);
+      return ctx.reply(`✅ Message sent to user ${userId} via @${tenant.botUsername}.`);
+    } catch (err) {
+      return ctx.reply(`⚠️ Failed to send message: ${err.message}`);
+    }
+  });
+
   // /listusers <tenant_id> — list all customers who messaged a tenant's bot
   bot.command("listusers", async (ctx) => {
     const tenantId = (ctx.match || "").trim();
@@ -435,18 +468,11 @@ Send /listgroups to confirm the group appears in the available pool.
       return ctx.reply(`No customers found for tenant ${tenantId}.`);
     }
 
-    const lines = await Promise.all(
-      customers.map(async (c) => {
-        let username = "N/A";
-        try {
-          const chat = await bot.api.getChat(c.telegramUserId);
-          username = chat.username ? `@${chat.username}` : chat.first_name || "N/A";
-        } catch (_) {
-          // User may have blocked the bot or privacy settings prevent lookup
-        }
-        return `• ${c.alias} — ${username} (ID: ${c.telegramUserId}) — ${c.status}`;
-      })
-    );
+    const lines = customers.map((c) => {
+      const name = [c.firstName, c.lastName].filter(Boolean).join(" ") || "N/A";
+      const username = c.username ? `@${c.username}` : "no username";
+      return `• ${c.alias} — ${name} (${username}) — ID: ${c.telegramUserId} — ${c.status}`;
+    });
 
     return ctx.reply(
       `👥 ${customers.length} customer${customers.length === 1 ? "" : "s"} for tenant ${tenantId}:\n\n${lines.join("\n")}`

@@ -33,10 +33,24 @@ async function getOrCreateCustomer(bot, tenantId, telegramUserId, fromUser, agen
   if (!customer) {
     const initial = fromUser?.first_name;
     const alias = await getNextAlias(tenantId, initial);
-    const customerData = { tenantId, telegramUserId, alias };
+    const customerData = {
+      tenantId,
+      telegramUserId,
+      alias,
+      firstName: fromUser?.first_name || null,
+      lastName: fromUser?.last_name || null,
+      username: fromUser?.username || null,
+    };
     if (source) customerData.source = source;
     if (externalUserId) customerData.externalUserId = externalUserId;
     customer = await Customer.create(customerData);
+  } else {
+    // Update profile fields in case the user changed their name/username
+    let dirty = false;
+    if (fromUser?.first_name && customer.firstName !== fromUser.first_name) { customer.firstName = fromUser.first_name; dirty = true; }
+    if (fromUser?.last_name !== undefined && customer.lastName !== (fromUser.last_name || null)) { customer.lastName = fromUser.last_name || null; dirty = true; }
+    if (fromUser?.username !== undefined && customer.username !== (fromUser.username || null)) { customer.username = fromUser.username || null; dirty = true; }
+    if (dirty) await customer.save();
   }
 
   // Create a topic in the agent group
