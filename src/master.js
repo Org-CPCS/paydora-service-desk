@@ -1,5 +1,5 @@
 const { Bot } = require("grammy");
-const { Tenant, EmptyGroup } = require("./db");
+const { Tenant, EmptyGroup, Customer } = require("./db");
 
 /**
  * Creates the Master Bot for tenant management.
@@ -58,6 +58,7 @@ Group prep (technical admin):
 Tenant management:
 /register <bot_token> <group_name> — Register a new tenant
 /list — See all registered tenants
+/listusers <tenant_id> — List all customers for a tenant
 /status <tenant_id> — Check a tenant's status
 /stop <tenant_id> — Pause a tenant
 /start <tenant_id> — Resume a tenant
@@ -419,6 +420,37 @@ Send /listgroups to confirm the group appears in the available pool.
       (t) => `• ${t._id} — @${t.botUsername || "unknown"} — ${t.status}`
     );
     return ctx.reply(`Registered tenants:\n${lines.join("\n")}`);
+  });
+
+  // /listusers <tenant_id> — list all customers who messaged a tenant's bot
+  bot.command("listusers", async (ctx) => {
+    const tenantId = (ctx.match || "").trim();
+    if (!tenantId) return ctx.reply("Usage: /listusers <tenant_id>");
+
+    const tenant = await Tenant.findById(tenantId);
+    if (!tenant) return ctx.reply(`Tenant ${tenantId} not found.`);
+
+    const customers = await Customer.find({ tenantId: tenant._id });
+    if (customers.length === 0) {
+      return ctx.reply(`No customers found for tenant ${tenantId}.`);
+    }
+
+    const lines = await Promise.all(
+      customers.map(async (c) => {
+        let username = "N/A";
+        try {
+          const chat = await bot.api.getChat(c.telegramUserId);
+          username = chat.username ? `@${chat.username}` : chat.first_name || "N/A";
+        } catch (_) {
+          // User may have blocked the bot or privacy settings prevent lookup
+        }
+        return `• ${c.alias} — ${username} (ID: ${c.telegramUserId}) — ${c.status}`;
+      })
+    );
+
+    return ctx.reply(
+      `👥 ${customers.length} customer${customers.length === 1 ? "" : "s"} for tenant ${tenantId}:\n\n${lines.join("\n")}`
+    );
   });
 
   // /status <tenant_id>
