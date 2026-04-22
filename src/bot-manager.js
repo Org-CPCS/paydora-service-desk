@@ -64,6 +64,20 @@ class BotManager {
    */
   async startBot(tenant) {
     const tenantId = tenant._id.toString();
+
+    // If a bot is already running for this tenant, stop it first and wait
+    // for the old polling session to fully terminate before starting a new one.
+    if (this.bots.has(tenantId)) {
+      console.log(`[BotManager] Bot already running for tenant ${tenantId}, stopping before restart...`);
+      try {
+        await this.stopBot(tenantId);
+      } catch (_) {
+        // Already stopped or failed to stop — ignore
+      }
+      // Wait for the old long-poll request to expire so Telegram releases the session.
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+    }
+
     const bot = createSubBot(tenant.botToken, {
       tenantId: tenant._id,
       agentGroupId: tenant.agentGroupId,
@@ -80,15 +94,24 @@ class BotManager {
       masterBotId: this.masterBotId,
     });
 
+    // Guard against concurrent restart attempts for the same tenant
+    let isRestarting = false;
+
     // Attach error handler for fatal polling errors — triggers retry
     bot.catch(async (err) => {
       console.error(`[BotManager] Fatal error for tenant ${tenantId}:`, err.message || err);
-      // Stop the failed bot and attempt restart with retry
+      if (isRestarting) {
+        console.log(`[BotManager] Restart already in progress for tenant ${tenantId}, skipping duplicate.`);
+        return;
+      }
+      isRestarting = true;
       try {
         await this.stopBot(tenantId);
       } catch (_) {
         // Already stopped or failed to stop — ignore
       }
+      // Wait before restarting to let the old polling session fully close
+      await new Promise((resolve) => setTimeout(resolve, 3000));
       await this.startBotWithRetry(tenant);
     });
 

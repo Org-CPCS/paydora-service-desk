@@ -85,8 +85,25 @@ function createSubBot(token, tenant, callbacks) {
     // /start command — welcome message
     if (ctx.message.text === "/start") {
       return ctx.reply(
-        "Hey there 👋 Thank you for messaging us!\n\nJust type your question or describe your issue and one of our team members will be with you shortly. We're happy to help!"
+        "Hey there 👋 Thank you for messaging us!\n\nJust type your question or describe your issue and one of our team members will be with you shortly. We're happy to help!\n\n💡 Tip: Send /setUsername YourName to set the name our team sees."
       );
+    }
+
+    // /setusername — let the customer set a display name
+    if (ctx.message.text && /^\/setusername(\s|$)/i.test(ctx.message.text)) {
+      const name = ctx.message.text.slice("/setusername".length).trim();
+      if (!name) {
+        return ctx.reply("Usage: /setUsername YourName\n\nThis sets the name our support team sees when you message us.");
+      }
+      if (name.length > 64) {
+        return ctx.reply("⚠️ Name is too long. Please keep it under 64 characters.");
+      }
+      const customer = await Customer.findOne({ tenantId, telegramUserId: ctx.from.id });
+      if (customer) {
+        customer.firstName = name;
+        await customer.save();
+      }
+      return ctx.reply(`✅ Your name has been set to "${name}". Our team will see this when you message us.`);
     }
 
     const customer = await getOrCreateCustomer(

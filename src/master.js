@@ -60,6 +60,7 @@ Tenant management:
 /list — See all registered tenants
 /listusers <tenant_id> — List all customers for a tenant
 /message <tenant_id> <user_id> <text> — Message a customer via sub-bot
+/messageAllUsers <tenant_id> <text> — Broadcast to all customers
 /status <tenant_id> — Check a tenant's status
 /stop <tenant_id> — Pause a tenant
 /start <tenant_id> — Resume a tenant
@@ -421,6 +422,48 @@ Send /listgroups to confirm the group appears in the available pool.
       (t) => `• ${t._id} — @${t.botUsername || "unknown"} — ${t.status}`
     );
     return ctx.reply(`Registered tenants:\n${lines.join("\n")}`);
+  });
+
+  // /messageAllUsers <tenant_id> <text> — broadcast a message to all customers of a tenant
+  bot.command("messageallusers", async (ctx) => {
+    const input = (ctx.match || "").trim();
+    const spaceIdx = input.indexOf(" ");
+    if (!input || spaceIdx === -1) {
+      return ctx.reply("Usage: /messageAllUsers <tenant_id> <text>");
+    }
+
+    const tenantId = input.slice(0, spaceIdx);
+    const text = input.slice(spaceIdx + 1).trim();
+    if (!text) return ctx.reply("Please provide a message to send.");
+
+    const tenant = await Tenant.findById(tenantId);
+    if (!tenant) return ctx.reply(`Tenant ${tenantId} not found.`);
+
+    const entry = botManager.bots.get(tenantId);
+    if (!entry) {
+      return ctx.reply(`Sub-bot for tenant ${tenantId} is not running. Try /start ${tenantId} first.`);
+    }
+
+    const customers = await Customer.find({ tenantId: tenant._id, status: { $ne: "blocked" } });
+    if (customers.length === 0) {
+      return ctx.reply(`No customers found for tenant ${tenantId}.`);
+    }
+
+    await ctx.reply(`📤 Sending message to ${customers.length} customer${customers.length === 1 ? "" : "s"}...`);
+
+    let sent = 0;
+    let failed = 0;
+    for (const c of customers) {
+      try {
+        await entry.bot.api.sendMessage(c.telegramUserId, text);
+        sent++;
+      } catch (err) {
+        failed++;
+        console.error(`[MasterBot] /messageAllUsers failed for user ${c.telegramUserId}:`, err.message);
+      }
+    }
+
+    return ctx.reply(`✅ Broadcast complete: ${sent} sent, ${failed} failed.`);
   });
 
   // /message <tenant_id> <telegram_user_id> <text> — send a message to a customer via the sub-bot
