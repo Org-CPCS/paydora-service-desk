@@ -197,25 +197,43 @@ async function relayToCustomer(bot, tenantId, threadId, msg) {
   // Telegram customers — existing DM behavior
   const chatId = customer.telegramUserId;
 
-  if (msg.text) {
-    await bot.api.sendMessage(chatId, msg.text);
-  } else if (msg.photo) {
-    const photo = msg.photo[msg.photo.length - 1];
-    await bot.api.sendPhoto(chatId, photo.file_id, {
-      caption: msg.caption || "",
-    });
-  } else if (msg.document) {
-    await bot.api.sendDocument(chatId, msg.document.file_id, {
-      caption: msg.caption || "",
-    });
-  } else if (msg.voice) {
-    await bot.api.sendVoice(chatId, msg.voice.file_id);
-  } else if (msg.video) {
-    await bot.api.sendVideo(chatId, msg.video.file_id, {
-      caption: msg.caption || "",
-    });
-  } else if (msg.sticker) {
-    await bot.api.sendSticker(chatId, msg.sticker.file_id);
+  try {
+    if (msg.text) {
+      await bot.api.sendMessage(chatId, msg.text);
+    } else if (msg.photo) {
+      const photo = msg.photo[msg.photo.length - 1];
+      await bot.api.sendPhoto(chatId, photo.file_id, {
+        caption: msg.caption || "",
+      });
+    } else if (msg.document) {
+      await bot.api.sendDocument(chatId, msg.document.file_id, {
+        caption: msg.caption || "",
+      });
+    } else if (msg.voice) {
+      await bot.api.sendVoice(chatId, msg.voice.file_id);
+    } else if (msg.video) {
+      await bot.api.sendVideo(chatId, msg.video.file_id, {
+        caption: msg.caption || "",
+      });
+    } else if (msg.sticker) {
+      await bot.api.sendSticker(chatId, msg.sticker.file_id);
+    }
+  } catch (err) {
+    // If the user blocked the bot, notify agents in the topic
+    if (err.message.includes("403") || err.message.includes("bot was blocked")) {
+      const replyOpts = customer.threadId ? { message_thread_id: customer.threadId } : {};
+      const tenant = await Tenant.findById(tenantId);
+      const agentGroupId = tenant?.agentGroupId;
+      if (agentGroupId) {
+        await bot.api.sendMessage(
+          agentGroupId,
+          `⚠️ Message not delivered — ${customer.alias} has blocked the bot.`,
+          replyOpts
+        );
+      }
+    } else {
+      throw err;
+    }
   }
 }
 

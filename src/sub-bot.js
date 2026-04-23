@@ -1,6 +1,9 @@
-const { Bot } = require("grammy");
+const { Bot, InlineKeyboard } = require("grammy");
 const { Customer, Tenant, GroupMember } = require("./db");
 const { getOrCreateCustomer, relayToAgents, relayToCustomer } = require("./relay");
+
+// Pending broadcast confirmations: key = `${tenantId}:${fromUserId}`, value = { text, timestamp }
+const pendingBroadcasts = new Map();
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -78,6 +81,61 @@ function createSubBot(token, tenant, callbacks) {
     }
   });
 
+  // --- Broadcast confirmation callbacks ---
+  bot.callbackQuery(/^broadcast_confirm:(\d+)$/, async (ctx) => {
+    const callbackUserId = Number(ctx.match[1]);
+    if (ctx.from.id !== callbackUserId) {
+      return ctx.answerCallbackQuery({ text: "Only the person who initiated the broadcast can confirm.", show_alert: true });
+    }
+
+    const key = `${tenantId}:${ctx.from.id}`;
+    const pending = pendingBroadcasts.get(key);
+    if (!pending) {
+      await ctx.editMessageText("⏰ Broadcast expired. Please run the command again.");
+      return ctx.answerCallbackQuery();
+    }
+
+    pendingBroadcasts.delete(key);
+    await ctx.answerCallbackQuery({ text: "Sending..." });
+
+    const customers = await Customer.find({ tenantId, status: { $ne: "blocked" }, source: "telegram" });
+    await ctx.editMessageText(`📤 Sending to ${customers.length} customer${customers.length === 1 ? "" : "s"}...`);
+
+    let sent = 0;
+    let blocked = 0;
+    let failed = 0;
+    for (const c of customers) {
+      try {
+        await bot.api.sendMessage(c.telegramUserId, pending.text);
+        sent++;
+      } catch (err) {
+        if (err.message.includes("403") || err.message.includes("bot was blocked")) {
+          blocked++;
+        } else {
+          failed++;
+        }
+        console.error(`[SubBot] broadcast failed for ${c.alias} (${c.telegramUserId}):`, err.message);
+      }
+    }
+
+    let summary = `✅ Broadcast complete: ${sent} sent`;
+    if (blocked > 0) summary += `, ${blocked} blocked`;
+    if (failed > 0) summary += `, ${failed} failed`;
+    await ctx.editMessageText(summary);
+  });
+
+  bot.callbackQuery(/^broadcast_cancel:(\d+)$/, async (ctx) => {
+    const callbackUserId = Number(ctx.match[1]);
+    if (ctx.from.id !== callbackUserId) {
+      return ctx.answerCallbackQuery({ text: "Only the person who initiated the broadcast can cancel.", show_alert: true });
+    }
+
+    const key = `${tenantId}:${ctx.from.id}`;
+    pendingBroadcasts.delete(key);
+    await ctx.editMessageText("❌ Broadcast cancelled.");
+    return ctx.answerCallbackQuery();
+  });
+
   // --- Customer DM handler ---
   bot.on("message", async (ctx, next) => {
     if (ctx.chat.type !== "private") return next();
@@ -138,6 +196,37 @@ function createSubBot(token, tenant, callbacks) {
 
     const threadId = ctx.message.message_thread_id;
     const replyOpts = threadId ? { message_thread_id: threadId } : {};
+
+    // /broadcastallusers <text> — broadcast a message to all customers of this tenant
+    if (ctx.message.text && /^\/broadcastallusers(\s|$)/i.test(ctx.message.text)) {
+      const text = ctx.message.text.slice("/broadcastallusers".length).trim();
+      if (!text) {
+        return ctx.reply("Usage: /broadcastallusers Your message here", replyOpts);
+      }
+
+      const count = await Customer.countDocuments({ tenantId, status: { $ne: "blocked" }, source: "telegram" });
+      if (count === 0) {
+        return ctx.reply("No customers to broadcast to.", replyOpts);
+      }
+
+      // Store the pending broadcast keyed by tenant + sender
+      const key = `${tenantId}:${ctx.from.id}`;
+      pendingBroadcasts.set(key, { text, timestamp: Date.now() });
+
+      // Expire after 5 minutes
+      setTimeout(() => pendingBroadcasts.delete(key), 5 * 60 * 1000);
+
+      const keyboard = new InlineKeyboard()
+        .text("✅ Confirm", `broadcast_confirm:${ctx.from.id}`)
+        .text("❌ Cancel", `broadcast_cancel:${ctx.from.id}`);
+
+      return ctx.reply(
+        `⚠️ This will send a message to ${count} customer${count === 1 ? "" : "s"}.\n\n` +
+        `Message preview:\n"${text.length > 200 ? text.slice(0, 200) + "…" : text}"\n\n` +
+        `Are you sure?`,
+        { ...replyOpts, reply_markup: keyboard }
+      );
+    }
 
     // /tag — set a custom title for a group member
     // Priority: reply-based first, then @mention-based
