@@ -122,7 +122,7 @@ class BotManager {
       onStart: () => {
         console.log(`[BotManager] Sub-Bot started for tenant ${tenantId}`);
       },
-      allowed_updates: ["message", "my_chat_member", "chat_member"],
+      allowed_updates: ["message", "my_chat_member", "chat_member", "callback_query"],
     });
 
     this.bots.set(tenantId, { bot, startedAt });
