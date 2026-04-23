@@ -118,6 +118,7 @@ function createSubBot(token, tenant, callbacks) {
     let failed = 0;
     for (const c of customers) {
       try {
+        console.log(`[SubBot] broadcast: processing ${c.alias}, source=${c.source}, telegramUserId=${c.telegramUserId}`);
         if (c.source === "web") {
           if (!webhookUrl) {
             failed++;
@@ -134,8 +135,8 @@ function createSubBot(token, tenant, callbacks) {
               tenantId: tenantId.toString(),
               customerAlias: c.alias,
               text: pending.text,
-              telegramFileId: null,
-              contentType: "text",
+              telegramFileId: pending.photoFileId || null,
+              contentType: pending.photoFileId ? "image" : "text",
             }),
           });
           if (!res.ok) {
@@ -143,9 +144,16 @@ function createSubBot(token, tenant, callbacks) {
             console.error(`[SubBot] broadcast webhook failed for ${c.alias}: ${res.status}`);
           } else {
             sent++;
+            console.log(`[SubBot] broadcast webhook sent for ${c.alias}`);
           }
         } else {
-          await bot.api.sendMessage(c.telegramUserId, pending.text);
+          if (pending.photoFileId) {
+            await bot.api.sendPhoto(c.telegramUserId, pending.photoFileId, {
+              caption: pending.text || "",
+            });
+          } else {
+            await bot.api.sendMessage(c.telegramUserId, pending.text);
+          }
           sent++;
         }
       } catch (err) {
@@ -238,11 +246,18 @@ function createSubBot(token, tenant, callbacks) {
     const threadId = ctx.message.message_thread_id;
     const replyOpts = threadId ? { message_thread_id: threadId } : {};
 
-    // /broadcastallusers <text> — broadcast a message to all customers of this tenant
-    if (ctx.message.text && /^\/broadcastallusers(\s|$)/i.test(ctx.message.text)) {
-      const text = ctx.message.text.slice("/broadcastallusers".length).trim();
-      if (!text) {
-        return ctx.reply("Usage: /broadcastallusers Your message here", replyOpts);
+    // /broadcastallusers <text> — broadcast a message (with optional image) to all customers of this tenant
+    // Supports: text-only, photo with caption, or photo with /broadcastallusers as caption
+    if (
+      (ctx.message.text && /^\/broadcastallusers(\s|$)/i.test(ctx.message.text)) ||
+      (ctx.message.caption && /^\/broadcastallusers(\s|$)/i.test(ctx.message.caption))
+    ) {
+      const rawText = ctx.message.text || ctx.message.caption || "";
+      const text = rawText.slice("/broadcastallusers".length).trim();
+      const photo = ctx.message.photo ? ctx.message.photo[ctx.message.photo.length - 1] : null;
+
+      if (!text && !photo) {
+        return ctx.reply("Usage: /broadcastallusers Your message here\n\nYou can also send a photo with /broadcastallusers as the caption.", replyOpts);
       }
 
       const count = await Customer.countDocuments({ tenantId, status: { $ne: "blocked" } });
@@ -252,8 +267,12 @@ function createSubBot(token, tenant, callbacks) {
 
       // Store the pending broadcast keyed by tenant + sender
       const key = `${tenantId}:${ctx.from.id}`;
-      pendingBroadcasts.set(key, { text, timestamp: Date.now() });
-      console.log(`[SubBot] broadcastallusers: stored pending broadcast key=${key}, text="${text.slice(0, 50)}...", pendingBroadcasts size=${pendingBroadcasts.size}`);
+      pendingBroadcasts.set(key, {
+        text: text || null,
+        photoFileId: photo ? photo.file_id : null,
+        timestamp: Date.now(),
+      });
+      console.log(`[SubBot] broadcastallusers: stored pending broadcast key=${key}, text="${(text || "").slice(0, 50)}", hasPhoto=${!!photo}, pendingBroadcasts size=${pendingBroadcasts.size}`);
 
       // Expire after 5 minutes
       setTimeout(() => pendingBroadcasts.delete(key), 5 * 60 * 1000);
@@ -262,9 +281,13 @@ function createSubBot(token, tenant, callbacks) {
         .text("✅ Confirm", `broadcast_confirm:${ctx.from.id}`)
         .text("❌ Cancel", `broadcast_cancel:${ctx.from.id}`);
 
+      let preview = "";
+      if (photo) preview += "📷 [image attached]\n";
+      if (text) preview += `"${text.length > 200 ? text.slice(0, 200) + "…" : text}"`;
+
       return ctx.reply(
         `⚠️ This will send a message to ${count} customer${count === 1 ? "" : "s"}.\n\n` +
-        `Message preview:\n"${text.length > 200 ? text.slice(0, 200) + "…" : text}"\n\n` +
+        `Message preview:\n${preview}\n\n` +
         `Are you sure?`,
         { ...replyOpts, reply_markup: keyboard }
       );
