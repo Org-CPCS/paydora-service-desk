@@ -135,8 +135,8 @@ function createSubBot(token, tenant, callbacks) {
               tenantId: tenantId.toString(),
               customerAlias: c.alias,
               text: pending.text,
-              telegramFileId: pending.photoFileId || null,
-              contentType: pending.photoFileId ? "image" : "text",
+              telegramFileId: pending.fileId || null,
+              contentType: pending.fileId ? "image" : "text",
             }),
           });
           if (!res.ok) {
@@ -147,10 +147,16 @@ function createSubBot(token, tenant, callbacks) {
             console.log(`[SubBot] broadcast webhook sent for ${c.alias}`);
           }
         } else {
-          if (pending.photoFileId) {
-            await bot.api.sendPhoto(c.telegramUserId, pending.photoFileId, {
-              caption: pending.text || "",
-            });
+          if (pending.fileId) {
+            if (pending.fileType === "photo") {
+              await bot.api.sendPhoto(c.telegramUserId, pending.fileId, {
+                caption: pending.text || "",
+              });
+            } else {
+              await bot.api.sendDocument(c.telegramUserId, pending.fileId, {
+                caption: pending.text || "",
+              });
+            }
           } else {
             await bot.api.sendMessage(c.telegramUserId, pending.text);
           }
@@ -247,7 +253,7 @@ function createSubBot(token, tenant, callbacks) {
     const replyOpts = threadId ? { message_thread_id: threadId } : {};
 
     // /broadcastallusers <text> — broadcast a message (with optional image) to all customers of this tenant
-    // Supports: text-only, photo with caption, or photo with /broadcastallusers as caption
+    // Supports: text-only, photo with caption, document with caption
     if (
       (ctx.message.text && /^\/broadcastallusers(\s|$)/i.test(ctx.message.text)) ||
       (ctx.message.caption && /^\/broadcastallusers(\s|$)/i.test(ctx.message.caption))
@@ -255,9 +261,12 @@ function createSubBot(token, tenant, callbacks) {
       const rawText = ctx.message.text || ctx.message.caption || "";
       const text = rawText.slice("/broadcastallusers".length).trim();
       const photo = ctx.message.photo ? ctx.message.photo[ctx.message.photo.length - 1] : null;
+      const doc = ctx.message.document || null;
+      const fileId = photo ? photo.file_id : doc ? doc.file_id : null;
+      const fileType = photo ? "photo" : doc ? "document" : null;
 
-      if (!text && !photo) {
-        return ctx.reply("Usage: /broadcastallusers Your message here\n\nYou can also send a photo with /broadcastallusers as the caption.", replyOpts);
+      if (!text && !fileId) {
+        return ctx.reply("Usage: /broadcastallusers Your message here\n\nYou can also send a photo or file with /broadcastallusers as the caption.", replyOpts);
       }
 
       const count = await Customer.countDocuments({ tenantId, status: { $ne: "blocked" } });
@@ -269,10 +278,11 @@ function createSubBot(token, tenant, callbacks) {
       const key = `${tenantId}:${ctx.from.id}`;
       pendingBroadcasts.set(key, {
         text: text || null,
-        photoFileId: photo ? photo.file_id : null,
+        fileId,
+        fileType,
         timestamp: Date.now(),
       });
-      console.log(`[SubBot] broadcastallusers: stored pending broadcast key=${key}, text="${(text || "").slice(0, 50)}", hasPhoto=${!!photo}, pendingBroadcasts size=${pendingBroadcasts.size}`);
+      console.log(`[SubBot] broadcastallusers: stored pending broadcast key=${key}, text="${(text || "").slice(0, 50)}", fileType=${fileType}, hasFile=${!!fileId}, pendingBroadcasts size=${pendingBroadcasts.size}`);
 
       // Expire after 5 minutes
       setTimeout(() => pendingBroadcasts.delete(key), 5 * 60 * 1000);
@@ -282,7 +292,8 @@ function createSubBot(token, tenant, callbacks) {
         .text("❌ Cancel", `broadcast_cancel:${ctx.from.id}`);
 
       let preview = "";
-      if (photo) preview += "📷 [image attached]\n";
+      if (fileType === "photo") preview += "📷 [image attached]\n";
+      if (fileType === "document") preview += "📎 [file attached]\n";
       if (text) preview += `"${text.length > 200 ? text.slice(0, 200) + "…" : text}"`;
 
       return ctx.reply(
