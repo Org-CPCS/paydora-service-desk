@@ -82,14 +82,22 @@ function createSubBot(token, tenant, callbacks) {
   });
 
   // --- Broadcast confirmation callbacks ---
+  bot.on("callback_query:data", async (ctx, next) => {
+    console.log(`[SubBot] callback_query received: data="${ctx.callbackQuery.data}", from=${ctx.from.id}, tenant=${tenantId}`);
+    return next();
+  });
+
   bot.callbackQuery(/^broadcast_confirm:(\d+)$/, async (ctx) => {
+    console.log(`[SubBot] broadcast_confirm callback received from user ${ctx.from.id}, tenant ${tenantId}`);
     const callbackUserId = Number(ctx.match[1]);
     if (ctx.from.id !== callbackUserId) {
+      console.log(`[SubBot] broadcast_confirm rejected: sender ${ctx.from.id} !== initiator ${callbackUserId}`);
       return ctx.answerCallbackQuery({ text: "Only the person who initiated the broadcast can confirm.", show_alert: true });
     }
 
     const key = `${tenantId}:${ctx.from.id}`;
     const pending = pendingBroadcasts.get(key);
+    console.log(`[SubBot] broadcast_confirm: key=${key}, pending=${pending ? "found" : "not found"}, pendingBroadcasts size=${pendingBroadcasts.size}`);
     if (!pending) {
       await ctx.editMessageText("⏰ Broadcast expired. Please run the command again.");
       return ctx.answerCallbackQuery();
@@ -99,6 +107,7 @@ function createSubBot(token, tenant, callbacks) {
     await ctx.answerCallbackQuery({ text: "Sending..." });
 
     const customers = await Customer.find({ tenantId, status: { $ne: "blocked" } });
+    console.log(`[SubBot] broadcast_confirm: found ${customers.length} customers to message`);
     await ctx.editMessageText(`📤 Sending to ${customers.length} customer${customers.length === 1 ? "" : "s"}...`);
 
     const webhookUrl = process.env.CHAT_WEBHOOK_URL;
@@ -156,6 +165,7 @@ function createSubBot(token, tenant, callbacks) {
   });
 
   bot.callbackQuery(/^broadcast_cancel:(\d+)$/, async (ctx) => {
+    console.log(`[SubBot] broadcast_cancel callback received from user ${ctx.from.id}, tenant ${tenantId}`);
     const callbackUserId = Number(ctx.match[1]);
     if (ctx.from.id !== callbackUserId) {
       return ctx.answerCallbackQuery({ text: "Only the person who initiated the broadcast can cancel.", show_alert: true });
@@ -243,6 +253,7 @@ function createSubBot(token, tenant, callbacks) {
       // Store the pending broadcast keyed by tenant + sender
       const key = `${tenantId}:${ctx.from.id}`;
       pendingBroadcasts.set(key, { text, timestamp: Date.now() });
+      console.log(`[SubBot] broadcastallusers: stored pending broadcast key=${key}, text="${text.slice(0, 50)}...", pendingBroadcasts size=${pendingBroadcasts.size}`);
 
       // Expire after 5 minutes
       setTimeout(() => pendingBroadcasts.delete(key), 5 * 60 * 1000);
