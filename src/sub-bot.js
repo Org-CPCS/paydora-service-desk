@@ -98,16 +98,47 @@ function createSubBot(token, tenant, callbacks) {
     pendingBroadcasts.delete(key);
     await ctx.answerCallbackQuery({ text: "Sending..." });
 
-    const customers = await Customer.find({ tenantId, status: { $ne: "blocked" }, source: "telegram" });
+    const customers = await Customer.find({ tenantId, status: { $ne: "blocked" } });
     await ctx.editMessageText(`📤 Sending to ${customers.length} customer${customers.length === 1 ? "" : "s"}...`);
+
+    const webhookUrl = process.env.CHAT_WEBHOOK_URL;
+    const webhookSecret = process.env.CHAT_WEBHOOK_SECRET || "";
 
     let sent = 0;
     let blocked = 0;
     let failed = 0;
     for (const c of customers) {
       try {
-        await bot.api.sendMessage(c.telegramUserId, pending.text);
-        sent++;
+        if (c.source === "web") {
+          if (!webhookUrl) {
+            failed++;
+            console.error(`[SubBot] broadcast skipped for web customer ${c.alias}: CHAT_WEBHOOK_URL not set`);
+            continue;
+          }
+          const res = await fetch(webhookUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-webhook-secret": webhookSecret,
+            },
+            body: JSON.stringify({
+              tenantId: tenantId.toString(),
+              customerAlias: c.alias,
+              text: pending.text,
+              telegramFileId: null,
+              contentType: "text",
+            }),
+          });
+          if (!res.ok) {
+            failed++;
+            console.error(`[SubBot] broadcast webhook failed for ${c.alias}: ${res.status}`);
+          } else {
+            sent++;
+          }
+        } else {
+          await bot.api.sendMessage(c.telegramUserId, pending.text);
+          sent++;
+        }
       } catch (err) {
         if (err.message.includes("403") || err.message.includes("bot was blocked")) {
           blocked++;
@@ -204,7 +235,7 @@ function createSubBot(token, tenant, callbacks) {
         return ctx.reply("Usage: /broadcastallusers Your message here", replyOpts);
       }
 
-      const count = await Customer.countDocuments({ tenantId, status: { $ne: "blocked" }, source: "telegram" });
+      const count = await Customer.countDocuments({ tenantId, status: { $ne: "blocked" } });
       if (count === 0) {
         return ctx.reply("No customers to broadcast to.", replyOpts);
       }
