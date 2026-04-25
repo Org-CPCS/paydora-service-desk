@@ -1,8 +1,8 @@
 require("dotenv").config();
 const mongoose = require("mongoose");
-const db = require("./db");
-const { BotManager } = require("./bot-manager");
-const { createMasterBot } = require("./master");
+const db = require("./db/index");
+const { BotManager } = require("./bots/bot-manager");
+const { createMasterBot } = require("./bots/create-master-bot");
 
 async function main() {
   // Validate required environment variables
@@ -50,8 +50,7 @@ async function main() {
   // Notify all super admins when a pending tenant activates
   const adminIds = process.env.SUPER_ADMIN_IDS.split(",").map((id) => Number(id.trim()));
   botManager.setActivationCallback(async (tenantId) => {
-    const { Tenant } = require("./db");
-    const tenant = await Tenant.findById(tenantId);
+    const tenant = await db.Tenant.findById(tenantId);
     const msg = `🟢 Tenant ${tenantId} is now active!\nBot: @${tenant?.botUsername || "unknown"}\n\nThe support bot is ready to receive customer messages.`;
     for (const adminId of adminIds) {
       try {
@@ -90,8 +89,7 @@ async function main() {
 
   // When the Master Bot is kicked from an agent group, notify admins
   botManager.setMasterBotKickedCallback(async (tenantId, groupId) => {
-    const { Tenant } = require("./db");
-    const tenant = await Tenant.findById(tenantId);
+    const tenant = await db.Tenant.findById(tenantId);
     const msg = `🚨 Master Bot was removed from the agent group for tenant ${tenantId} (@${tenant?.botUsername || "unknown"})!\n\nGroup ID: ${groupId}\n\nThe sub-bot is still running, but group management (rename, invite links, validation) won't work until the Master Bot is re-added as admin.\n\nPlease re-add @${masterBotInfo.username} to the group and promote it to admin.`;
     for (const adminId of adminIds) {
       try {
