@@ -22,6 +22,7 @@ const { handleTag } = require("../commands/agent/tag");
 const { handleWelcomeUser } = require("../commands/agent/welcome-user");
 const { handleBroadcast, handleBroadcastConfirm, handleBroadcastCancel } = require("../commands/agent/broadcast");
 const { handleAssignBot, handleAssignBotCallback } = require("../commands/agent/assign-bot");
+const { handleAgentHelp } = require("../commands/agent/help");
 
 /**
  * Creates a configured grammY Bot instance for a tenant.
@@ -187,6 +188,11 @@ function createSubBot(token, tenant, callbacks) {
 
     const threadId = ctx.message.message_thread_id;
     const cmdCtx = { tenantId, agentGroupId, threadId, bot };
+
+    // /help — show agent commands
+    if (ctx.message.text && /^\/help(\s|$)/i.test(ctx.message.text)) {
+      return handleAgentHelp(ctx, cmdCtx);
+    }
 
     // /broadcastallusers — broadcast a message to all customers
     if (

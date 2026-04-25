@@ -27,8 +27,15 @@ function createMasterBot(token, superAdminIds, botManager) {
   const adminIds = superAdminIds.split(",").map((id) => Number(id.trim()));
 
   // Auth middleware — silently ignore non-Super-Admin senders
+  // In groups, only respond if the group is NOT a tenant's agent group
+  // (prevents master commands from leaking in front of staff)
   bot.use(async (ctx, next) => {
     if (!ctx.from || !adminIds.includes(ctx.from.id)) return;
+    if (ctx.chat && ctx.chat.type !== "private") {
+      const { Tenant } = require("../db/index");
+      const isTenantGroup = await Tenant.exists({ agentGroupId: ctx.chat.id, status: { $ne: "removed" } });
+      if (isTenantGroup) return;
+    }
     return next();
   });
 
