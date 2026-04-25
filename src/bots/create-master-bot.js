@@ -11,6 +11,8 @@ const { handleRegister } = require("../commands/master/register");
 const { handleStop, handleStart, handleRemove, handleList, handleStatus } = require("../commands/master/tenant-lifecycle");
 const { handleMessageAllUsers, handleMessage } = require("../commands/master/messaging");
 const { handleListUsers, handleUserCount } = require("../commands/master/user-management");
+const { handleAddBot } = require("../commands/master/add-bot");
+const { handleListBots } = require("../commands/master/list-bots");
 
 /**
  * Creates the Master Bot for tenant management.
@@ -44,6 +46,8 @@ function createMasterBot(token, superAdminIds, botManager) {
 
   // Tenant management
   bot.command("register", (ctx) => handleRegister(ctx, deps));
+  bot.command("addbot", (ctx) => handleAddBot(ctx, deps));
+  bot.command("listbots", (ctx) => handleListBots(ctx, deps));
   bot.command("stop", (ctx) => handleStop(ctx, deps));
   bot.command("start", (ctx) => handleStart(ctx, deps));
   bot.command("remove", (ctx) => handleRemove(ctx, deps));

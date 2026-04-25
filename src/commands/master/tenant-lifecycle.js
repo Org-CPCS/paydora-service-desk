@@ -1,4 +1,5 @@
 const Tenant = require("../../db/models/tenant");
+const TenantBot = require("../../db/models/tenant-bot");
 
 /**
  * /stop <tenant_id> — pause a tenant.
@@ -55,10 +56,14 @@ async function handleList(ctx) {
   const tenants = await Tenant.find();
   if (tenants.length === 0) return ctx.reply("No tenants registered.");
 
-  const lines = tenants.map(
-    (t) => `• ${t._id} — @${t.botUsername || "unknown"} — ${t.status}`
+  const lines = await Promise.all(
+    tenants.map(async (t) => {
+      const botCount = await TenantBot.countDocuments({ tenantId: t._id, status: { $ne: "removed" } });
+      const botLabel = botCount > 1 ? ` (${botCount} bots)` : "";
+      return `• ${t._id} — @${t.botUsername || "unknown"} — ${t.status}${botLabel}`;
+    })
   );
-  return ctx.reply(`Registered tenants:\n${lines.join("\n")}`);
+  return ctx.reply(`Registered tenants:\n${lines.join("\n")}\n\nUse /listbots <tenant_id> for details.`);
 }
 
 /**

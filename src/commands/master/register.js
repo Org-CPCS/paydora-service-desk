@@ -1,5 +1,6 @@
 const { Bot } = require("grammy");
 const Tenant = require("../../db/models/tenant");
+const TenantBot = require("../../db/models/tenant-bot");
 const EmptyGroup = require("../../db/models/empty-group");
 
 /**
@@ -69,6 +70,14 @@ async function handleRegister(ctx, { bot, botManager }) {
     botToken,
     botUsername: meResult.username,
     agentGroupId: groupId,
+    status: "pending",
+  });
+
+  // Create TenantBot record
+  await TenantBot.create({
+    tenantId: tenant._id,
+    botToken,
+    botUsername: meResult.username,
     status: "pending",
   });
 

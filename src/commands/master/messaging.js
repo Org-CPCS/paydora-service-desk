@@ -18,7 +18,7 @@ async function handleMessageAllUsers(ctx, { botManager }) {
   const tenant = await Tenant.findById(tenantId);
   if (!tenant) return ctx.reply(`Tenant ${tenantId} not found.`);
 
-  const entry = botManager.bots.get(tenantId);
+  const entry = botManager.getBotForTenant(tenantId);
   if (!entry) {
     return ctx.reply(`Sub-bot for tenant ${tenantId} is not running. Try /start ${tenantId} first.`);
   }
@@ -66,7 +66,7 @@ async function handleMessage(ctx, { botManager }) {
   const tenant = await Tenant.findById(tenantId);
   if (!tenant) return ctx.reply(`Tenant ${tenantId} not found.`);
 
-  const entry = botManager.bots.get(tenantId);
+  const entry = botManager.getBotForTenant(tenantId);
   if (!entry) {
     return ctx.reply(`Sub-bot for tenant ${tenantId} is not running. Try /start ${tenantId} first.`);
   }

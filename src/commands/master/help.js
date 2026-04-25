@@ -38,6 +38,8 @@ Group prep (technical admin):
 
 Tenant management:
 /register <bot_token> <group_name> — Register a new tenant
+/addbot <tenant_id> <bot_token> — Add a backup bot to a tenant
+/listbots <tenant_id> — See all bots for a tenant
 /list — See all registered tenants
 /listusers <tenant_id> — List all customers for a tenant
 /usercount <tenant_id> — Show customer count for a tenant

@@ -9,10 +9,18 @@ afterAll(async () => await teardownTestDb());
 
 function createMockBotManager(subBot) {
   const bots = new Map();
-  if (subBot) {
-    bots.set("default", { bot: subBot });
-  }
-  return { bots };
+  return {
+    bots,
+    getBotForTenant: jest.fn((tenantId) => {
+      // Look for any entry matching the tenantId
+      for (const [key, entry] of bots) {
+        if (key === tenantId || key.startsWith(tenantId + ":")) {
+          return entry;
+        }
+      }
+      return undefined;
+    }),
+  };
 }
 
 describe("handleMessageAllUsers", () => {

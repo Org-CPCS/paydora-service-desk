@@ -8,12 +8,18 @@ const { getNextAlias } = require("../db/get-next-alias");
  * @param {number} telegramUserId
  * @param {object} fromUser - Telegram user object (first_name, last_name, username)
  * @param {number} agentGroupId
- * @param {{ source?: string, externalUserId?: string }} [options]
+ * @param {{ source?: string, externalUserId?: string, botToken?: string }} [options]
  * @returns {Promise<object>} customer document
  */
-async function getOrCreateCustomer(bot, tenantId, telegramUserId, fromUser, agentGroupId, { source, externalUserId } = {}) {
+async function getOrCreateCustomer(bot, tenantId, telegramUserId, fromUser, agentGroupId, { source, externalUserId, botToken } = {}) {
   let customer = await Customer.findOne({ tenantId, telegramUserId });
   if (customer && customer.threadId) {
+    // Update lastBotToken to track which bot the customer most recently messaged
+    if (botToken && customer.lastBotToken !== botToken) {
+      customer.lastBotToken = botToken;
+      await customer.save();
+    }
+
     // Don't reopen blocked conversations
     if (customer.status === "blocked") return customer;
 
@@ -52,6 +58,7 @@ async function getOrCreateCustomer(bot, tenantId, telegramUserId, fromUser, agen
     };
     if (source) customerData.source = source;
     if (externalUserId) customerData.externalUserId = externalUserId;
+    if (botToken) customerData.lastBotToken = botToken;
     customer = await Customer.create(customerData);
   } else {
     // Update profile fields in case the user changed their name/username
@@ -59,6 +66,7 @@ async function getOrCreateCustomer(bot, tenantId, telegramUserId, fromUser, agen
     if (fromUser?.first_name && customer.firstName !== fromUser.first_name) { customer.firstName = fromUser.first_name; dirty = true; }
     if (fromUser?.last_name !== undefined && customer.lastName !== (fromUser.last_name || null)) { customer.lastName = fromUser.last_name || null; dirty = true; }
     if (fromUser?.username !== undefined && customer.username !== (fromUser.username || null)) { customer.username = fromUser.username || null; dirty = true; }
+    if (botToken && customer.lastBotToken !== botToken) { customer.lastBotToken = botToken; dirty = true; }
     if (dirty) await customer.save();
   }
 

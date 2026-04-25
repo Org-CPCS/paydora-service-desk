@@ -1,9 +1,13 @@
 const Tenant = require("../db/models/tenant");
+const TenantBot = require("../db/models/tenant-bot");
 const { createSubBot } = require("./create-sub-bot");
 
 class BotManager {
   constructor() {
-    /** @type {Map<string, { bot: import('grammy').Bot, startedAt: Date }>} */
+    /**
+     * Map key is `${tenantId}:${botToken}` for multi-bot support.
+     * @type {Map<string, { bot: import('grammy').Bot, startedAt: Date, tenantId: string, botToken: string }>}
+     */
     this.bots = new Map();
     /** @type {((tenantId: string) => void) | null} */
     this.onActivation = null;
@@ -15,70 +19,79 @@ class BotManager {
     this.masterBotId = null;
   }
 
-  /**
-   * Set a callback that fires when a pending tenant is activated.
-   * @param {(tenantId: string) => void} callback
-   */
+  /** @param {(tenantId: string) => void} callback */
   setActivationCallback(callback) {
     this.onActivation = callback;
   }
 
-  /**
-   * Set a callback that fires when a sub-bot needs to be promoted to admin.
-   * @param {(tenantId: string, groupId: number, botId: number) => void} callback
-   */
+  /** @param {(tenantId: string, groupId: number, botId: number) => void} callback */
   setPromotionCallback(callback) {
     this.onPromoteBot = callback;
   }
 
-  /**
-   * Set a callback that fires when the Master Bot is kicked from an agent group.
-   * @param {(tenantId: string, groupId: number) => void} callback
-   */
+  /** @param {(tenantId: string, groupId: number) => void} callback */
   setMasterBotKickedCallback(callback) {
     this.onMasterBotKicked = callback;
   }
 
-  /**
-   * Set the Master Bot's Telegram user ID so sub-bots can watch for it.
-   * @param {number} botId
-   */
+  /** @param {number} botId */
   setMasterBotId(botId) {
     this.masterBotId = botId;
   }
 
   /**
-   * Load all active tenants from the database and start a Sub-Bot for each.
-   * Uses startBotWithRetry so a single failing tenant doesn't block others.
+   * Build the map key for a bot entry.
+   */
+  _key(tenantId, botToken) {
+    return `${tenantId}:${botToken}`;
+  }
+
+  /**
+   * Load all active/pending tenants and start all their bots.
    */
   async loadAndStartAll() {
     const tenants = await Tenant.find({ status: { $in: ["active", "pending"] } });
     for (const tenant of tenants) {
-      await this.startBotWithRetry(tenant);
+      const tenantId = tenant._id.toString();
+
+      // Load TenantBot records for this tenant
+      const tenantBots = await TenantBot.find({
+        tenantId: tenant._id,
+        status: { $in: ["active", "pending"] },
+      });
+
+      if (tenantBots.length > 0) {
+        // Multi-bot path: start each TenantBot
+        for (const tb of tenantBots) {
+          await this.startBotWithRetry(tenant, tb.botToken);
+        }
+      } else {
+        // Legacy path: tenant has botToken directly (no TenantBot records yet)
+        await this.startBotWithRetry(tenant, tenant.botToken);
+      }
     }
   }
 
   /**
-   * Create and start a Sub-Bot for the given tenant.
+   * Create and start a Sub-Bot for the given tenant + bot token.
    * @param {object} tenant - Mongoose tenant document
+   * @param {string} [botToken] - specific bot token (defaults to tenant.botToken for backwards compat)
    */
-  async startBot(tenant) {
+  async startBot(tenant, botToken) {
+    const token = botToken || tenant.botToken;
     const tenantId = tenant._id.toString();
+    const key = this._key(tenantId, token);
 
-    // If a bot is already running for this tenant, stop it first and wait
-    // for the old polling session to fully terminate before starting a new one.
-    if (this.bots.has(tenantId)) {
-      console.log(`[BotManager] Bot already running for tenant ${tenantId}, stopping before restart...`);
+    // If this specific bot is already running, stop it first
+    if (this.bots.has(key)) {
+      console.log(`[BotManager] Bot already running for ${key}, stopping before restart...`);
       try {
-        await this.stopBot(tenantId);
-      } catch (_) {
-        // Already stopped or failed to stop — ignore
-      }
-      // Wait for the old long-poll request to expire so Telegram releases the session.
+        await this.stopBotByKey(key);
+      } catch (_) {}
       await new Promise((resolve) => setTimeout(resolve, 3000));
     }
 
-    const bot = createSubBot(tenant.botToken, {
+    const bot = createSubBot(token, {
       tenantId: tenant._id,
       agentGroupId: tenant.agentGroupId,
     }, {
@@ -94,52 +107,47 @@ class BotManager {
       masterBotId: this.masterBotId,
     });
 
-    // Guard against concurrent restart attempts for the same tenant
     let isRestarting = false;
 
-    // Attach error handler for fatal polling errors — triggers retry
     bot.catch(async (err) => {
-      console.error(`[BotManager] Fatal error for tenant ${tenantId}:`, err.message || err);
+      console.error(`[BotManager] Fatal error for ${key}:`, err.message || err);
       if (isRestarting) {
-        console.log(`[BotManager] Restart already in progress for tenant ${tenantId}, skipping duplicate.`);
+        console.log(`[BotManager] Restart already in progress for ${key}, skipping duplicate.`);
         return;
       }
       isRestarting = true;
       try {
-        await this.stopBot(tenantId);
-      } catch (_) {
-        // Already stopped or failed to stop — ignore
-      }
-      // Wait before restarting to let the old polling session fully close
+        await this.stopBotByKey(key);
+      } catch (_) {}
       await new Promise((resolve) => setTimeout(resolve, 3000));
-      await this.startBotWithRetry(tenant);
+      await this.startBotWithRetry(tenant, token);
     });
 
     const startedAt = new Date();
-    // bot.start() returns a promise that resolves when polling stops;
-    // the onStart callback fires once polling is confirmed running.
     bot.start({
       onStart: () => {
-        console.log(`[BotManager] Sub-Bot started for tenant ${tenantId}`);
+        console.log(`[BotManager] Sub-Bot started for tenant ${tenantId} (token: ...${token.slice(-6)})`);
       },
       allowed_updates: ["message", "my_chat_member", "chat_member", "callback_query"],
     });
 
-    this.bots.set(tenantId, { bot, startedAt });
+    this.bots.set(key, { bot, startedAt, tenantId, botToken: token });
   }
 
   /**
    * Start a Sub-Bot with retry logic.
-   * @param {object} tenant - Mongoose tenant document
-   * @param {number} maxRetries - Maximum retry attempts (default 3)
-   * @param {number} delayMs - Delay between retries in ms (default 5000)
+   * @param {object} tenant
+   * @param {string} [botToken]
+   * @param {number} [maxRetries=3]
+   * @param {number} [delayMs=5000]
    */
-  async startBotWithRetry(tenant, maxRetries = 3, delayMs = 5000) {
+  async startBotWithRetry(tenant, botToken, maxRetries = 3, delayMs = 5000) {
+    const token = botToken || tenant.botToken;
     const tenantId = tenant._id.toString();
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        await this.startBot(tenant);
-        return; // success
+        await this.startBot(tenant, token);
+        return;
       } catch (err) {
         console.error(
           `[BotManager] Failed to start bot for tenant ${tenantId} (attempt ${attempt}/${maxRetries}):`,
@@ -151,20 +159,36 @@ class BotManager {
       }
     }
     console.error(
-      `[BotManager] Giving up on tenant ${tenantId} after ${maxRetries} failed attempts.`
+      `[BotManager] Giving up on tenant ${tenantId} (token: ...${token.slice(-6)}) after ${maxRetries} failed attempts.`
     );
   }
 
   /**
-   * Stop a running Sub-Bot and remove it from the map.
+   * Stop a bot by its map key.
+   * @param {string} key
+   */
+  async stopBotByKey(key) {
+    const entry = this.bots.get(key);
+    if (!entry) return;
+    await entry.bot.stop();
+    this.bots.delete(key);
+    console.log(`[BotManager] Sub-Bot stopped: ${key}`);
+  }
+
+  /**
+   * Stop all bots for a given tenant.
    * @param {string} tenantId
    */
   async stopBot(tenantId) {
-    const entry = this.bots.get(tenantId);
-    if (!entry) return;
-    await entry.bot.stop();
-    this.bots.delete(tenantId);
-    console.log(`[BotManager] Sub-Bot stopped for tenant ${tenantId}`);
+    const keysToStop = [];
+    for (const [key, entry] of this.bots) {
+      if (entry.tenantId === tenantId) {
+        keysToStop.push(key);
+      }
+    }
+    for (const key of keysToStop) {
+      await this.stopBotByKey(key);
+    }
   }
 
   /**
@@ -172,10 +196,10 @@ class BotManager {
    */
   async stopAll() {
     const stopPromises = [];
-    for (const [tenantId, entry] of this.bots) {
+    for (const [key, entry] of this.bots) {
       stopPromises.push(
         entry.bot.stop().catch((err) => {
-          console.error(`[BotManager] Error stopping bot for tenant ${tenantId}:`, err.message || err);
+          console.error(`[BotManager] Error stopping bot ${key}:`, err.message || err);
         })
       );
     }
@@ -185,14 +209,18 @@ class BotManager {
   }
 
   /**
-   * Get the status of a specific tenant's Sub-Bot.
+   * Get the status of a specific tenant's bots.
+   * Returns the first running bot's status for backwards compat.
    * @param {string} tenantId
    * @returns {{ running: boolean, startedAt: Date } | null}
    */
   getStatus(tenantId) {
-    const entry = this.bots.get(tenantId);
-    if (!entry) return null;
-    return { running: true, startedAt: entry.startedAt };
+    for (const [key, entry] of this.bots) {
+      if (entry.tenantId === tenantId) {
+        return { running: true, startedAt: entry.startedAt };
+      }
+    }
+    return null;
   }
 
   /**
@@ -201,10 +229,25 @@ class BotManager {
    */
   getAllStatuses() {
     const statuses = new Map();
-    for (const [tenantId, entry] of this.bots) {
-      statuses.set(tenantId, { running: true, startedAt: entry.startedAt });
+    for (const [key, entry] of this.bots) {
+      statuses.set(key, { running: true, startedAt: entry.startedAt });
     }
     return statuses;
+  }
+
+  /**
+   * Get a running bot entry for a tenant by tenantId.
+   * Returns the first match (for backwards compat with master commands).
+   * @param {string} tenantId
+   * @returns {{ bot: import('grammy').Bot } | undefined}
+   */
+  getBotForTenant(tenantId) {
+    for (const [key, entry] of this.bots) {
+      if (entry.tenantId === tenantId) {
+        return entry;
+      }
+    }
+    return undefined;
   }
 }
 

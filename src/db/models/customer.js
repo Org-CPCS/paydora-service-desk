@@ -15,6 +15,7 @@ const customerSchema = new mongoose.Schema({
   status: { type: String, enum: ["open", "closed", "blocked"], default: "open" },
   source: { type: String, enum: ["telegram", "web"], default: "telegram" },
   externalUserId: { type: String, default: null },
+  lastBotToken: { type: String, default: null },
   createdAt: { type: Date, default: Date.now },
 });
 

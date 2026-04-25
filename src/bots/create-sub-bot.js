@@ -2,6 +2,7 @@ const { Bot } = require("grammy");
 const Customer = require("../db/models/customer");
 const GroupMember = require("../db/models/group-member");
 const Tenant = require("../db/models/tenant");
+const TenantBot = require("../db/models/tenant-bot");
 const { getOrCreateCustomer } = require("../relay/get-or-create-customer");
 const { relayToAgents } = require("../relay/relay-to-agents");
 const { relayToCustomer } = require("../relay/relay-to-customer");
@@ -20,6 +21,7 @@ const { handleRename } = require("../commands/agent/rename");
 const { handleTag } = require("../commands/agent/tag");
 const { handleWelcomeUser } = require("../commands/agent/welcome-user");
 const { handleBroadcast, handleBroadcastConfirm, handleBroadcastCancel } = require("../commands/agent/broadcast");
+const { handleAssignBot, handleAssignBotCallback } = require("../commands/agent/assign-bot");
 
 /**
  * Creates a configured grammY Bot instance for a tenant.
@@ -48,8 +50,17 @@ function createSubBot(token, tenant, callbacks) {
       }
     }
 
-    // Bot was promoted to admin — activate the tenant
+    // Bot was promoted to admin — activate the tenant bot
     if (newStatus === "administrator") {
+      // Activate the TenantBot record
+      const tb = await TenantBot.findOne({ tenantId, botToken: token });
+      if (tb && tb.status === "pending") {
+        tb.status = "active";
+        await tb.save();
+        console.log(`[SubBot] TenantBot ${tb._id} activated — bot is now admin in group.`);
+      }
+
+      // Also activate the tenant itself if it's still pending
       const t = await Tenant.findById(tenantId);
       if (t && t.status === "pending") {
         t.status = "active";
@@ -109,6 +120,11 @@ function createSubBot(token, tenant, callbacks) {
     await handleBroadcastCancel(ctx, { tenantId });
   });
 
+  // --- Assign bot callback ---
+  bot.callbackQuery(/^assignbot:(.+)$/, async (ctx) => {
+    await handleAssignBotCallback(ctx, { tenantId });
+  });
+
   // --- Customer DM handler ---
   bot.on("message", async (ctx, next) => {
     if (ctx.chat.type !== "private") return next();
@@ -128,7 +144,8 @@ function createSubBot(token, tenant, callbacks) {
       tenantId,
       ctx.from.id,
       ctx.from,
-      agentGroupId
+      agentGroupId,
+      { botToken: token }
     );
 
     // Only block messages from explicitly blocked customers
@@ -143,6 +160,21 @@ function createSubBot(token, tenant, callbacks) {
 
     // Skip messages sent by this bot itself (but allow other bots/channels)
     if (ctx.from.id === ctx.me.id) return;
+
+    // Also skip messages sent by other bots in the same tenant group
+    // (prevents bot A from processing bot B's relayed messages)
+    if (ctx.from.is_bot && ctx.from.id !== ctx.me.id) {
+      // Check if this is another tenant bot for the same group
+      const otherBot = await TenantBot.findOne({
+        tenantId,
+        botToken: { $ne: token },
+        status: { $in: ["active", "pending"] },
+      });
+      if (otherBot) {
+        // Could be the other sub-bot — skip to avoid echo loops
+        return;
+      }
+    }
 
     // Cache the sender's username → userId for @mention resolution
     if (ctx.from.username) {
@@ -172,6 +204,11 @@ function createSubBot(token, tenant, callbacks) {
     // /welcomeUser — proactively send the welcome message to a user
     if (ctx.message.text && /^\/welcomeUser(\s|$)/i.test(ctx.message.text)) {
       return handleWelcomeUser(ctx, cmdCtx);
+    }
+
+    // /assignbot — show inline keyboard to switch the customer's assigned bot
+    if (ctx.message.text && /^\/assignbot(\s|$)/i.test(ctx.message.text)) {
+      return handleAssignBot(ctx, cmdCtx);
     }
 
     if (!threadId) return;
@@ -206,8 +243,8 @@ function createSubBot(token, tenant, callbacks) {
       return handleRename(ctx, cmdCtx);
     }
 
-    // Regular agent reply — relay to customer
-    await relayToCustomer(bot, tenantId, threadId, ctx.message);
+    // Regular agent reply — relay to customer (with botToken for dedup)
+    await relayToCustomer(bot, tenantId, threadId, ctx.message, { botToken: token });
   });
 
   return bot;

@@ -4,14 +4,25 @@ const Tenant = require("../db/models/tenant");
 /**
  * Forward an agent reply back to the customer (tenant-scoped).
  * Web customers get a webhook POST; Telegram customers get a DM.
+ *
+ * When multiple bots serve the same tenant, only the bot matching
+ * customer.lastBotToken should relay. Other bots skip silently.
+ *
  * @param {import('grammy').Bot} bot
  * @param {string} tenantId
  * @param {number} threadId
  * @param {object} msg - Telegram message object
+ * @param {{ botToken?: string }} [options]
  */
-async function relayToCustomer(bot, tenantId, threadId, msg) {
+async function relayToCustomer(bot, tenantId, threadId, msg, { botToken } = {}) {
   const customer = await Customer.findOne({ tenantId, threadId });
   if (!customer) return;
+
+  // If this customer has a preferred bot and this isn't it, skip.
+  // This prevents duplicate replies when multiple bots are in the same group.
+  if (botToken && customer.lastBotToken && customer.lastBotToken !== botToken) {
+    return;
+  }
 
   // Web customers — POST to the CPCS webhook
   if (customer.source === "web") {

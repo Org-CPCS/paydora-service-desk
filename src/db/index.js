@@ -1,5 +1,6 @@
 const { connect } = require("./connect");
 const Tenant = require("./models/tenant");
+const TenantBot = require("./models/tenant-bot");
 const Customer = require("./models/customer");
 const Counter = require("./models/counter");
 const EmptyGroup = require("./models/empty-group");
@@ -9,6 +10,7 @@ const { getNextAlias } = require("./get-next-alias");
 module.exports = {
   connect,
   Tenant,
+  TenantBot,
   Customer,
   Counter,
   EmptyGroup,
