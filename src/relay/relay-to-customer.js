@@ -78,6 +78,7 @@ async function relayToWebCustomer(customer, tenantId, msg) {
     text,
     telegramFileId,
     contentType,
+    messageId: msg.message_id,
   };
 
   try {
