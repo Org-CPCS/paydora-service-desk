@@ -9,6 +9,8 @@
     "test": "jest --forceExit --detectOpenHandles"
   },
   "dependencies": {
+    "@grammyjs/auto-retry": "^2.0.2",
+    "@grammyjs/runner": "^2.0.3",
     "dotenv": "^16.4.7",
     "grammy": "^1.35.0",
     "mongoose": "^8.9.5"

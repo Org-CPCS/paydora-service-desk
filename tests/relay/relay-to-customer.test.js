@@ -79,11 +79,10 @@ describe("relayToCustomer", () => {
       expect(bot.api.sendMessage.mock.calls[1][2]).toEqual({ message_thread_id: 42 });
     });
 
-    it("rethrows non-blocked errors", async () => {
-      bot.api.sendMessage.mockRejectedValueOnce(new Error("500 Internal Server Error"));
-      await expect(
-        relayToCustomer(bot, tenant._id, 42, { text: "hi" })
-      ).rejects.toThrow("500 Internal Server Error");
+    it("logs non-blocked errors without throwing", async () => {
+      bot.api.sendMessage.mockRejectedValue(new Error("500 Internal Server Error"));
+      // Should not throw — errors are caught and logged
+      await relayToCustomer(bot, tenant._id, 42, { text: "hi" });
     });
   });
 

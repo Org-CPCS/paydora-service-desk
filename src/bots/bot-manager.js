@@ -110,7 +110,20 @@ class BotManager {
     let isRestarting = false;
 
     bot.catch(async (err) => {
-      console.error(`[BotManager] Fatal error for ${key}:`, err.message || err);
+      const errMsg = err.message || String(err);
+
+      // Don't restart on recoverable errors — these are per-user/per-chat issues, not bot-wide
+      const recoverable =
+        errMsg.includes("403: Forbidden") ||
+        errMsg.includes("400: Bad Request") ||
+        errMsg.includes("429: Too Many Requests");
+
+      if (recoverable) {
+        console.error(`[BotManager] Recoverable error for ${key} (not restarting):`, errMsg);
+        return;
+      }
+
+      console.error(`[BotManager] Fatal error for ${key}:`, errMsg);
       if (isRestarting) {
         console.log(`[BotManager] Restart already in progress for ${key}, skipping duplicate.`);
         return;
@@ -119,7 +132,7 @@ class BotManager {
       try {
         await this.stopBotByKey(key);
       } catch (_) {}
-      await new Promise((resolve) => setTimeout(resolve, 3000));
+      await new Promise((resolve) => setTimeout(resolve, 5000));
       await this.startBotWithRetry(tenant, token);
     });
 

@@ -1,5 +1,6 @@
 const Customer = require("../db/models/customer");
 const Tenant = require("../db/models/tenant");
+const { messageQueue } = require("./message-queue");
 
 /**
  * Forward an agent reply back to the customer (tenant-scoped).
@@ -104,7 +105,7 @@ async function relayToWebCustomer(customer, tenantId, msg) {
 async function relayToTelegramCustomer(bot, customer, tenantId, msg) {
   const chatId = customer.telegramUserId;
 
-  try {
+  await messageQueue.enqueue(chatId, async () => {
     if (msg.text) {
       await bot.api.sendMessage(chatId, msg.text);
     } else if (msg.photo) {
@@ -125,7 +126,7 @@ async function relayToTelegramCustomer(bot, customer, tenantId, msg) {
     } else if (msg.sticker) {
       await bot.api.sendSticker(chatId, msg.sticker.file_id);
     }
-  } catch (err) {
+  }).catch(async (err) => {
     // If the user blocked the bot, notify agents in the topic
     if (err.message.includes("403") || err.message.includes("bot was blocked")) {
       const replyOpts = customer.threadId ? { message_thread_id: customer.threadId } : {};
@@ -139,9 +140,9 @@ async function relayToTelegramCustomer(bot, customer, tenantId, msg) {
         );
       }
     } else {
-      throw err;
+      console.error(`[relay-to-customer] Failed to relay to ${customer.alias}:`, err.message);
     }
-  }
+  });
 }
 
 module.exports = { relayToCustomer };

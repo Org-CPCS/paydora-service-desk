@@ -1,4 +1,6 @@
 const { Bot } = require("grammy");
+const { autoRetry } = require("@grammyjs/auto-retry");
+const { sequentialize } = require("@grammyjs/runner");
 const Customer = require("../db/models/customer");
 const GroupMember = require("../db/models/group-member");
 const Tenant = require("../db/models/tenant");
@@ -34,6 +36,22 @@ const { handleAgentHelp } = require("../commands/agent/help");
 function createSubBot(token, tenant, callbacks) {
   const { tenantId, agentGroupId } = tenant;
   const bot = new Bot(token);
+
+  // Auto-retry on 429 rate limits instead of crashing
+  bot.api.config.use(autoRetry({
+    maxRetryAttempts: 5,
+    maxDelaySeconds: 60,
+  }));
+
+  // Sequentialize updates per chat to prevent race conditions
+  // (e.g., two messages from the same user processed simultaneously)
+  bot.use(sequentialize((ctx) => {
+    const chatId = ctx.chat?.id;
+    const threadId = ctx.message?.message_thread_id;
+    // Group by chat + thread so messages in the same topic are processed in order
+    if (threadId) return `${chatId}:${threadId}`;
+    return chatId ? String(chatId) : undefined;
+  }));
 
   // --- Detect when bot is added to the agent group ---
   bot.on("my_chat_member", async (ctx) => {
