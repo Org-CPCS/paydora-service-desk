@@ -10,6 +10,8 @@ async function handleRename(ctx, { agentGroupId, threadId }) {
     await ctx.api.editForumTopic(agentGroupId, threadId, { name: newName.slice(0, 128) });
     await ctx.reply(`✅ Topic renamed to "${newName.slice(0, 128)}".`, { message_thread_id: threadId });
   } catch (e) {
+    // TOPIC_NOT_MODIFIED means the name is already set — not a real error
+    if (e.message && e.message.includes("TOPIC_NOT_MODIFIED")) return;
     console.error("[SubBot] /rename error:", e.message);
     await ctx.reply(`⚠️ Failed to rename: ${e.message}`, { message_thread_id: threadId });
   }
