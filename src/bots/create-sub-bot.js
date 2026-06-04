@@ -195,6 +195,28 @@ function createSubBot(token, tenant, callbacks) {
       }
     }
 
+    const threadId = ctx.message.message_thread_id;
+
+    // --- Multi-bot dedup: only the primary bot for this thread should process ---
+    // For messages in a customer thread, check if this bot is the assigned one.
+    // If another bot is primary for this customer, bail out completely — no API calls.
+    if (threadId) {
+      const customer = await Customer.findOne({ tenantId, threadId });
+      if (customer && customer.lastBotToken && customer.lastBotToken !== token) {
+        return;
+      }
+    } else {
+      // Messages not in a thread (General topic or thread-less commands):
+      // Only the first active bot for this tenant should handle them.
+      const firstBot = await TenantBot.findOne({
+        tenantId,
+        status: "active",
+      }).sort({ createdAt: 1 });
+      if (firstBot && firstBot.botToken !== token) {
+        return;
+      }
+    }
+
     // Cache the sender's username → userId for @mention resolution
     if (ctx.from.username) {
       GroupMember.findOneAndUpdate(
@@ -204,7 +226,6 @@ function createSubBot(token, tenant, callbacks) {
       ).catch(() => {});
     }
 
-    const threadId = ctx.message.message_thread_id;
     const cmdCtx = { tenantId, agentGroupId, threadId, bot };
 
     // /help — show agent commands
