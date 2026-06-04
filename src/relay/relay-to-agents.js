@@ -15,27 +15,34 @@ async function relayToAgents(bot, customer, msg, agentGroupId) {
   const prefix = `${customer.alias}:\n`;
   const userInfo = msg.from;
 
+  const msgType = msg.text ? "text" : msg.photo ? "photo" : msg.document ? "document" : msg.voice ? "voice" : msg.video ? "video" : msg.sticker ? "sticker" : "other";
+  console.log(`[relay-to-agents] Queuing: alias=${customer.alias}, threadId=${customer.threadId}, type=${msgType}, groupId=${agentGroupId}`);
+
   // Queue the send to the agent group (rate-limited per group chat)
   await messageQueue.enqueue(agentGroupId, async () => {
     try {
       await sendToThread(bot, agentGroupId, opts, prefix, msg, userInfo);
+      console.log(`[relay-to-agents] Sent: alias=${customer.alias}, threadId=${customer.threadId}, type=${msgType}`);
     } catch (err) {
       // Thread was deleted — recreate it and retry once
       if (err.message && err.message.includes("message thread not found")) {
-        console.log(`[relay] Thread ${customer.threadId} not found for ${customer.alias}, recreating topic...`);
+        console.log(`[relay-to-agents] Thread ${customer.threadId} not found for ${customer.alias}, recreating topic...`);
         const Customer = require("../db/models/customer");
         const topic = await bot.api.createForumTopic(agentGroupId, customer.alias);
-        await Customer.findByIdAndUpdate(customer._id, { threadId: topic.message_thread_id });
-        customer.threadId = topic.message_thread_id;
+        const newThreadId = topic.message_thread_id;
+        await Customer.findByIdAndUpdate(customer._id, { threadId: newThreadId });
+        customer.threadId = newThreadId;
+        console.log(`[relay-to-agents] Topic recreated: alias=${customer.alias}, newThreadId=${newThreadId}`);
 
-        const newOpts = { message_thread_id: topic.message_thread_id };
+        const newOpts = { message_thread_id: newThreadId };
         await sendToThread(bot, agentGroupId, newOpts, prefix, msg, userInfo);
+        console.log(`[relay-to-agents] Retry sent: alias=${customer.alias}, newThreadId=${newThreadId}, type=${msgType}`);
         return;
       }
       throw err;
     }
   }).catch((err) => {
-    console.error(`[relay-to-agents] Failed to relay message from ${customer.alias}:`, err.message);
+    console.error(`[relay-to-agents] Failed: alias=${customer.alias}, threadId=${customer.threadId}, type=${msgType}, error=${err.message}`);
   });
 }
 

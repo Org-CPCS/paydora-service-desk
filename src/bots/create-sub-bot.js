@@ -168,8 +168,12 @@ function createSubBot(token, tenant, callbacks) {
     );
 
     // Only block messages from explicitly blocked customers
-    if (customer.status === "blocked") return;
+    if (customer.status === "blocked") {
+      console.log(`[SubBot] Blocked customer ignored: userId=${ctx.from.id}, alias=${customer.alias}`);
+      return;
+    }
 
+    console.log(`[SubBot] Customer DM received: userId=${ctx.from.id}, alias=${customer.alias}, bot=...${token.slice(-6)}, threadId=${customer.threadId}`);
     await relayToAgents(bot, customer, ctx.message, agentGroupId);
   });
 
@@ -203,6 +207,7 @@ function createSubBot(token, tenant, callbacks) {
     if (threadId) {
       const customer = await Customer.findOne({ tenantId, threadId });
       if (customer && customer.lastBotToken && customer.lastBotToken !== token) {
+        console.log(`[SubBot] Skipping agent msg (not primary): threadId=${threadId}, alias=${customer.alias}, thisBot=...${token.slice(-6)}, primaryBot=...${customer.lastBotToken.slice(-6)}`);
         return;
       }
     } else {
@@ -213,6 +218,7 @@ function createSubBot(token, tenant, callbacks) {
         status: "active",
       }).sort({ createdAt: 1 });
       if (firstBot && firstBot.botToken !== token) {
+        console.log(`[SubBot] Skipping non-threaded msg (not first bot): tenant=${tenantId}, thisBot=...${token.slice(-6)}`);
         return;
       }
     }
@@ -289,6 +295,7 @@ function createSubBot(token, tenant, callbacks) {
     }
 
     // Regular agent reply — relay to customer (with botToken for dedup)
+    console.log(`[SubBot] Agent reply in thread: threadId=${threadId}, from=${ctx.from.username || ctx.from.id}, bot=...${token.slice(-6)}`);
     await relayToCustomer(bot, tenantId, threadId, ctx.message, { botToken: token });
   });
 

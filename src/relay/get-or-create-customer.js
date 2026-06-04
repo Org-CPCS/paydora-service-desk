@@ -16,6 +16,7 @@ async function getOrCreateCustomer(bot, tenantId, telegramUserId, fromUser, agen
   if (customer && customer.threadId) {
     // Update lastBotToken to track which bot the customer most recently messaged
     if (botToken && customer.lastBotToken !== botToken) {
+      console.log(`[getOrCreateCustomer] Bot switch: alias=${customer.alias}, oldBot=...${(customer.lastBotToken || "none").slice(-6)}, newBot=...${botToken.slice(-6)}`);
       customer.lastBotToken = botToken;
       await customer.save();
     }
@@ -75,6 +76,7 @@ async function getOrCreateCustomer(bot, tenantId, telegramUserId, fromUser, agen
   customer.threadId = topic.message_thread_id;
   customer.status = "open";
   await customer.save();
+  console.log(`[getOrCreateCustomer] New topic created: alias=${customer.alias}, threadId=${topic.message_thread_id}, tenantId=${tenantId}`);
 
   // Post a welcome message in the topic
   await bot.api.sendMessage(

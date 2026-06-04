@@ -17,13 +17,20 @@ const { messageQueue } = require("./message-queue");
  */
 async function relayToCustomer(bot, tenantId, threadId, msg, { botToken } = {}) {
   const customer = await Customer.findOne({ tenantId, threadId });
-  if (!customer) return;
+  if (!customer) {
+    console.log(`[relay-to-customer] No customer found: tenantId=${tenantId}, threadId=${threadId}, skipping`);
+    return;
+  }
 
   // If this customer has a preferred bot and this isn't it, skip.
   // This prevents duplicate replies when multiple bots are in the same group.
   if (botToken && customer.lastBotToken && customer.lastBotToken !== botToken) {
+    console.log(`[relay-to-customer] Skipping (not primary bot): alias=${customer.alias}, thisBot=...${botToken.slice(-6)}, primaryBot=...${customer.lastBotToken.slice(-6)}`);
     return;
   }
+
+  const msgType = msg.text ? "text" : msg.photo ? "photo" : msg.document ? "document" : msg.voice ? "voice" : msg.video ? "video" : msg.sticker ? "sticker" : "other";
+  console.log(`[relay-to-customer] Relaying: alias=${customer.alias}, source=${customer.source || "telegram"}, type=${msgType}, threadId=${threadId}`);
 
   // Web customers — POST to the CPCS webhook
   if (customer.source === "web") {
@@ -104,6 +111,7 @@ async function relayToWebCustomer(customer, tenantId, msg) {
 
 async function relayToTelegramCustomer(bot, customer, tenantId, msg) {
   const chatId = customer.telegramUserId;
+  console.log(`[relay-to-customer] Telegram DM queuing: alias=${customer.alias}, chatId=${chatId}`);
 
   await messageQueue.enqueue(chatId, async () => {
     if (msg.text) {
@@ -126,9 +134,11 @@ async function relayToTelegramCustomer(bot, customer, tenantId, msg) {
     } else if (msg.sticker) {
       await bot.api.sendSticker(chatId, msg.sticker.file_id);
     }
+    console.log(`[relay-to-customer] Telegram DM sent: alias=${customer.alias}, chatId=${chatId}`);
   }).catch(async (err) => {
     // If the user blocked the bot, notify agents in the topic
     if (err.message.includes("403") || err.message.includes("bot was blocked")) {
+      console.log(`[relay-to-customer] Blocked by user: alias=${customer.alias}, chatId=${chatId}`);
       const replyOpts = customer.threadId ? { message_thread_id: customer.threadId } : {};
       const tenant = await Tenant.findById(tenantId);
       const agentGroupId = tenant?.agentGroupId;
@@ -140,7 +150,7 @@ async function relayToTelegramCustomer(bot, customer, tenantId, msg) {
         );
       }
     } else {
-      console.error(`[relay-to-customer] Failed to relay to ${customer.alias}:`, err.message);
+      console.error(`[relay-to-customer] Telegram DM failed: alias=${customer.alias}, chatId=${chatId}, error=${err.message}`);
     }
   });
 }
