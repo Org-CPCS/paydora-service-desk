@@ -18,11 +18,12 @@ const MAX_QUEUE_SIZE = 500; // max queued messages per chat before dropping olde
 const MAX_RETRIES = 3;
 
 class MessageQueue {
-  constructor({ perChatIntervalMs, globalRateLimit, maxQueueSize, maxRetries } = {}) {
+  constructor({ perChatIntervalMs, globalRateLimit, maxQueueSize, maxRetries, retryBaseMs } = {}) {
     this.perChatIntervalMs = perChatIntervalMs ?? PER_CHAT_INTERVAL_MS;
     this.globalRateLimit = globalRateLimit ?? GLOBAL_RATE_LIMIT;
     this.maxQueueSize = maxQueueSize ?? MAX_QUEUE_SIZE;
     this.maxRetries = maxRetries ?? MAX_RETRIES;
+    this.retryBaseMs = retryBaseMs ?? 1000;
     /** @type {Map<string, Array<{ task: Function, resolve: Function, reject: Function, retries: number }>>} */
     this.queues = new Map();
     /** @type {Map<string, number>} */
@@ -93,7 +94,7 @@ class MessageQueue {
         } catch (err) {
           if (this._isRetryable(err) && item.retries < this.maxRetries) {
             item.retries++;
-            const backoff = Math.min(1000 * Math.pow(2, item.retries), 30000);
+            const backoff = Math.min(this.retryBaseMs * Math.pow(2, item.retries), 30000);
             console.warn(`[MessageQueue] Retrying for chat ${key} (attempt ${item.retries}/${MAX_RETRIES}) in ${backoff}ms`);
             await sleep(backoff);
             queue.unshift(item); // Put it back at the front

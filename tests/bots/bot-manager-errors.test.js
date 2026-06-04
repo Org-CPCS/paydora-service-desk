@@ -121,9 +121,12 @@ describe("BotManager error handling", () => {
     await botManager.startBot(tenant, "tok-fatal");
     const firstBot = fakes[0];
 
-    // Trigger a fatal network error
+    // Trigger a fatal network error — don't await (has internal 5s delay)
     const handler = firstBot.catch.mock.calls[0][0];
-    await handler(new Error("HttpError: Network request for 'getUpdates' failed!"));
+    handler(new Error("HttpError: Network request for 'getUpdates' failed!"));
+
+    // Give it a tick to call stop (stop is called before the 5s delay for restart)
+    await new Promise((r) => setImmediate(r));
 
     // Should have stopped the first bot
     expect(firstBot.stop).toHaveBeenCalled();
@@ -147,10 +150,12 @@ describe("BotManager error handling", () => {
     const firstBot = fakes[0];
     const handler = firstBot.catch.mock.calls[0][0];
 
-    // Trigger two fatal errors simultaneously
-    const p1 = handler(new Error("HttpError: Network request failed!"));
-    const p2 = handler(new Error("HttpError: Another network failure!"));
-    await Promise.all([p1, p2]);
+    // Trigger two fatal errors simultaneously — don't await
+    handler(new Error("HttpError: Network request failed!"));
+    handler(new Error("HttpError: Another network failure!"));
+
+    // Give a tick for the first handler to set isRestarting and call stop
+    await new Promise((r) => setImmediate(r));
 
     // stop should only be called once (second error skipped due to isRestarting)
     expect(firstBot.stop).toHaveBeenCalledTimes(1);

@@ -4,7 +4,7 @@ describe("MessageQueue", () => {
   let queue;
 
   beforeEach(() => {
-    queue = new MessageQueue({ perChatIntervalMs: 0 });
+    queue = new MessageQueue({ perChatIntervalMs: 0, retryBaseMs: 0 });
   });
 
   it("executes a single task immediately", async () => {
@@ -69,7 +69,7 @@ describe("MessageQueue", () => {
   });
 
   it("drops oldest message when queue overflows", async () => {
-    const smallQueue = new MessageQueue({ perChatIntervalMs: 0, maxQueueSize: 5 });
+    const smallQueue = new MessageQueue({ perChatIntervalMs: 0, retryBaseMs: 0, maxQueueSize: 5 });
 
     // Block the queue with a long-running task
     let unblock;
