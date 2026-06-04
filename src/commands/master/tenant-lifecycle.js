@@ -1,5 +1,10 @@
 const Tenant = require("../../db/models/tenant");
 const TenantBot = require("../../db/models/tenant-bot");
+const mongoose = require("mongoose");
+
+function isValidObjectId(id) {
+  return mongoose.Types.ObjectId.isValid(id) && String(new mongoose.Types.ObjectId(id)) === id;
+}
 
 /**
  * /stop <tenant_id> — pause a tenant.
@@ -7,6 +12,7 @@ const TenantBot = require("../../db/models/tenant-bot");
 async function handleStop(ctx, { botManager }) {
   const tenantId = (ctx.match || "").trim();
   if (!tenantId) return ctx.reply("Usage: /stop <tenant_id>");
+  if (!isValidObjectId(tenantId)) return ctx.reply(`"${tenantId}" is not a valid tenant ID.`);
 
   const tenant = await Tenant.findById(tenantId);
   if (!tenant) return ctx.reply(`Tenant ${tenantId} not found.`);
@@ -23,6 +29,7 @@ async function handleStop(ctx, { botManager }) {
 async function handleStart(ctx, { botManager }) {
   const tenantId = (ctx.match || "").trim();
   if (!tenantId) return ctx.reply("Usage: /start <tenant_id>");
+  if (!isValidObjectId(tenantId)) return ctx.reply(`"${tenantId}" is not a valid tenant ID.`);
 
   const tenant = await Tenant.findById(tenantId);
   if (!tenant) return ctx.reply(`Tenant ${tenantId} not found.`);
@@ -39,6 +46,7 @@ async function handleStart(ctx, { botManager }) {
 async function handleRemove(ctx, { botManager }) {
   const tenantId = (ctx.match || "").trim();
   if (!tenantId) return ctx.reply("Usage: /remove <tenant_id>");
+  if (!isValidObjectId(tenantId)) return ctx.reply(`"${tenantId}" is not a valid tenant ID.`);
 
   const tenant = await Tenant.findById(tenantId);
   if (!tenant) return ctx.reply(`Tenant ${tenantId} not found.`);
@@ -72,6 +80,7 @@ async function handleList(ctx) {
 async function handleStatus(ctx, { botManager }) {
   const tenantId = (ctx.match || "").trim();
   if (!tenantId) return ctx.reply("Usage: /status <tenant_id>");
+  if (!isValidObjectId(tenantId)) return ctx.reply(`"${tenantId}" is not a valid tenant ID.`);
 
   const tenant = await Tenant.findById(tenantId);
   if (!tenant) return ctx.reply(`Tenant ${tenantId} not found.`);
