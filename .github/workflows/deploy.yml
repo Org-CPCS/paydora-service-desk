@@ -14,8 +14,27 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ubuntu
           key: ${{ secrets.EC2_SSH_KEY }}
+          # Without this the remote script keeps running after a failed
+          # command and the step still exits 0 — a failed `git pull` reported
+          # a green deploy while the box stayed on old code.
+          script_stop: true
           script: |
+            set -euo pipefail
             cd ~/paydora-service-desk
-            git pull origin main
-            npm install
-            pm2 restart all
+
+            # Force the checkout onto origin/main rather than pulling into
+            # whatever HEAD happens to be. A rollback leaves the repo in
+            # detached HEAD, and `git pull` from there never advances main.
+            git fetch --prune origin main
+            git checkout main
+            git reset --hard origin/main
+
+            npm ci --omit=dev
+
+            # Restart via the config file so changes to ecosystem.config.js
+            # (memory ceiling, log format) actually take effect. `pm2 restart
+            # all` reuses the previously loaded config and ignores them.
+            pm2 restart ecosystem.config.js --update-env
+
+            echo "Deployed commit: $(git rev-parse --short HEAD)"
+            pm2 describe paydora-support-bot | grep -E "status|uptime"

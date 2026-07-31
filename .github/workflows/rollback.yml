@@ -13,8 +13,21 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ubuntu
           key: ${{ secrets.EC2_SSH_KEY }}
+          script_stop: true
           script: |
+            set -euo pipefail
             cd ~/paydora-service-desk
-            git checkout HEAD~1
-            npm install
-            pm2 restart all
+
+            # Stay on the main branch while stepping back one commit. The old
+            # `git checkout HEAD~1` detached HEAD, which silently broke every
+            # later deploy: `git pull origin main` no longer advanced the
+            # branch the app was actually running from.
+            git checkout main
+            git reset --hard HEAD~1
+
+            npm ci --omit=dev
+
+            pm2 restart ecosystem.config.js --update-env
+
+            echo "Rolled back to: $(git rev-parse --short HEAD)"
+            echo "Re-run 'Deploy to EC2' on main to roll forward again."

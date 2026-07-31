@@ -43,8 +43,16 @@ async function main() {
     console.error("[Master] Error in Master Bot:", err.message || err);
   });
 
-  masterBot.start({
-    onStart: () => console.log("[Master] Master Bot started."),
+  // Not awaited (long-lived), but the rejection must be handled: if polling
+  // dies the process should exit and let PM2 restart it, rather than staying
+  // "online" with a Master Bot that silently receives nothing.
+  Promise.resolve(
+    masterBot.start({
+      onStart: () => console.log("[Master] Master Bot started."),
+    })
+  ).catch((err) => {
+    console.error("[Master] Master Bot polling failed:", err.message || err);
+    process.exit(1);
   });
 
   // Notify all super admins when a pending tenant activates
@@ -105,12 +113,19 @@ async function main() {
   console.log("[Main] All Sub-Bots loaded.");
 
   // Graceful shutdown
+  let shuttingDown = false;
   const shutdown = async (signal) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     console.log(`[Main] Received ${signal}, shutting down...`);
-    await botManager.stopAll();
-    await masterBot.stop();
-    await mongoose.connection.close();
-    console.log("[Main] Shutdown complete.");
+    try {
+      await botManager.stopAll();
+      await masterBot.stop();
+      await mongoose.connection.close();
+      console.log("[Main] Shutdown complete.");
+    } catch (err) {
+      console.error("[Main] Error during shutdown:", err.message || err);
+    }
     process.exit(0);
   };
 
