@@ -13,10 +13,13 @@ module.exports = {
       // a minute stop the app instead of grinding on (see 2026-04-16, when it
       // exited with code 1 thirty times in a row).
       min_uptime: "60s",
-      // Backstop for a slow leak: restart before the kernel OOM-killer does,
-      // which is what has been SIGKILLing this process every ~10 days.
-      // Tune against actual RSS (`pm2 describe`, `free -h`) on the box.
-      max_memory_restart: "500M",
+      // Leak backstop, not a working limit. Measured baseline is ~95MB RSS on
+      // a fresh start; the old build drifted to 420-470MB over ~10 days and
+      // was OOM-killed by the kernel every time. On the 2GB box this ceiling
+      // is far above any legitimate steady state, so hitting it means
+      // something is leaking again — and PM2 recycles cleanly instead of the
+      // kernel taking the process out from under us.
+      max_memory_restart: "600M",
       // src/index.js stops every bot and closes Mongo on SIGINT; PM2's 1.6s
       // default cuts that short and leaves polling sessions half-open.
       kill_timeout: 10000,
