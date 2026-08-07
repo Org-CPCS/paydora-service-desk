@@ -132,7 +132,7 @@ function createSubBot(token, tenant, callbacks) {
   });
 
   bot.callbackQuery(/^broadcast_confirm:(\d+)$/, async (ctx) => {
-    await handleBroadcastConfirm(ctx, { tenantId, bot });
+    await handleBroadcastConfirm(ctx, { tenantId, bot, botToken: token });
   });
 
   bot.callbackQuery(/^broadcast_cancel:(\d+)$/, async (ctx) => {
