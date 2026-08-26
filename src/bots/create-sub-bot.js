@@ -26,6 +26,20 @@ const { handleBroadcast, handleBroadcastConfirm, handleBroadcastCancel } = requi
 const { handleAssignBot, handleAssignBotCallback } = require("../commands/agent/assign-bot");
 const { handleAgentHelp } = require("../commands/agent/help");
 
+// Telegram attributes a message from an admin with "Remain Anonymous" enabled to
+// this shared bot account. Such a message is a human agent acting, not a bot.
+const TELEGRAM_ANONYMOUS_ADMIN_ID = 1087968824;
+
+/**
+ * A bot's Telegram user id is the numeric prefix of its token, so a sibling bot
+ * can be recognised from the database alone — no getMe call needed.
+ * @param {string} token
+ * @returns {number}
+ */
+function botIdFromToken(token) {
+  return Number(String(token).split(":")[0]);
+}
+
 /**
  * Creates a configured grammY Bot instance for a tenant.
  * @param {string} token - Telegram bot token
@@ -184,19 +198,27 @@ function createSubBot(token, tenant, callbacks) {
     // Skip messages sent by this bot itself (but allow other bots/channels)
     if (ctx.from.id === ctx.me.id) return;
 
-    // Also skip messages sent by other bots in the same tenant group
-    // (prevents bot A from processing bot B's relayed messages)
-    if (ctx.from.is_bot && ctx.from.id !== ctx.me.id) {
-      // Check if this is another tenant bot for the same group
-      const otherBot = await TenantBot.findOne({
+    // Also skip messages sent by the tenant's other bots, so bot A does not
+    // process bot B's relayed messages and start an echo loop.
+    //
+    // Match the sender's id rather than merely asking whether the tenant owns a
+    // second bot. Telegram delivers a message from an admin who has "Remain
+    // Anonymous" switched on as coming from @GroupAnonymousBot, which is a bot,
+    // so the old count-only check dropped every anonymous admin's message —
+    // /broadcastallusers included — before it reached any handler or log, for
+    // every tenant with two bots. Mirage broke the second its backup bot was
+    // registered on 2026-06-03 and stayed silent because nothing logs a drop.
+    if (
+      ctx.from.is_bot &&
+      ctx.from.id !== ctx.me.id &&
+      ctx.from.id !== TELEGRAM_ANONYMOUS_ADMIN_ID
+    ) {
+      const siblings = await TenantBot.find({
         tenantId,
         botToken: { $ne: token },
         status: { $in: ["active", "pending"] },
-      });
-      if (otherBot) {
-        // Could be the other sub-bot — skip to avoid echo loops
-        return;
-      }
+      }).select("botToken");
+      if (siblings.some((b) => botIdFromToken(b.botToken) === ctx.from.id)) return;
     }
 
     const threadId = ctx.message.message_thread_id;
