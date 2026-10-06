@@ -6,6 +6,7 @@ on:
 jobs:
   rollback:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Rollback via SSH
         uses: appleboy/ssh-action@v1
