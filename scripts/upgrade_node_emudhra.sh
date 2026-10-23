@@ -25,7 +25,8 @@
 #   5. Waits for the app to come back on the new Node and stay up.
 #
 # Nothing restarts before step 4. Safe to re-run: it exits early once the
-# running app is already on a fixed Node.
+# running app is already on a fixed Node, and if an earlier run installed Node
+# but failed later, it skips the apt steps and finishes the rest.
 #
 # The restart takes a few seconds, while the support bot stops answering.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -59,7 +60,11 @@ ASSUME_YES=0
 BACKUP_DIR=""
 OLD_PKG=""
 SOURCE_SWITCHED=0
+INSTALL_STARTED=0
 NODE_INSTALLED=0
+# The run that installs Node records how to go back here, so a re-run after a
+# later failure still shows the way back to the original Node 20 package.
+STATE_FILE="$HOME/upgrade_node_emudhra.rollback"
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG_FILE"; }
 die() { log "ERROR: $*"; exit 1; }
@@ -119,6 +124,10 @@ restore_apt_source() {
 }
 
 print_rollback() {
+  if [[ -z "$OLD_PKG" || -z "$BACKUP_DIR" ]]; then
+    log "No record of the previous nodejs package, so no rollback commands to show."
+    return 0
+  fi
   cat <<EOF | tee -a "$LOG_FILE"
 
 To go back to Node 20 (only if something is wrong):
@@ -134,10 +143,23 @@ EOF
 on_exit() {
   local code=$?
   [[ $code -ne 0 ]] || return 0
-  if [[ $SOURCE_SWITCHED -eq 1 && $NODE_INSTALLED -eq 0 ]]; then
+  if [[ $INSTALL_STARTED -eq 1 ]]; then
+    # apt-get can fail after changing the package, so look before claiming
+    # nothing changed.
+    local now
+    now="$(dpkg-query -W -f='${Version}' nodejs 2>/dev/null || true)"
+    if [[ $NODE_INSTALLED -eq 0 && "$now" == "$OLD_PKG" ]]; then
+      restore_apt_source
+      log "apt-get install failed but left nodejs at $OLD_PKG. Nothing was restarted."
+    else
+      log "nodejs package is now ${now:-unknown}."
+      print_rollback
+    fi
+  elif [[ $SOURCE_SWITCHED -eq 1 ]]; then
     restore_apt_source
     log "Nothing was installed or restarted."
-  elif [[ $NODE_INSTALLED -eq 1 ]]; then
+  elif [[ -n "$OLD_PKG" && -n "$BACKUP_DIR" ]]; then
+    # A re-run that skipped the apt steps, using the first run's record.
     print_rollback
   fi
 }
@@ -146,6 +168,8 @@ trap on_exit EXIT
 switch_apt_source() {
   BACKUP_DIR="/var/backups/nodesource-$(date +%Y%m%d-%H%M%S)"
   sudo mkdir -p "$BACKUP_DIR"
+  # From here on, a failure puts the backed-up sources back (see on_exit).
+  SOURCE_SWITCHED=1
   local f
   shopt -s nullglob
   for f in /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
@@ -155,7 +179,6 @@ switch_apt_source() {
     fi
   done
   shopt -u nullglob
-  SOURCE_SWITCHED=1
   log "Previous NodeSource apt source saved in $BACKUP_DIR"
 
   if [[ ! -s "$KEYRING" ]]; then
@@ -178,8 +201,10 @@ switch_apt_source() {
 
 install_node() {
   log "Installing nodejs from node_${NODE_MAJOR}.x..."
+  INSTALL_STARTED=1
   sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nodejs
   NODE_INSTALLED=1
+  printf 'OLD_PKG=%q\nBACKUP_DIR=%q\n' "$OLD_PKG" "$BACKUP_DIR" > "$STATE_FILE"
   hash -r
   local have
   have="$(node --version | tr -d 'v')"
@@ -246,11 +271,21 @@ main() {
     [[ "$answer" =~ ^[Yy]$ ]] || { log "Cancelled. Nothing changed."; exit 0; }
   fi
 
-  OLD_PKG="$(dpkg-query -W -f='${Version}' nodejs 2>/dev/null || true)"
-  log "Current nodejs package: ${OLD_PKG:-not installed by apt}"
-
-  switch_apt_source
-  install_node
+  if node_on_disk_ok; then
+    # An earlier run installed Node and then failed (in the rebuild, say).
+    # Switching the apt source again would record Node 22 as the version to
+    # go back to, so reuse that run's record instead.
+    log "Node $(node --version) is already installed and does not trust $BAD_ROOT. Skipping the apt steps."
+    if [[ -s "$STATE_FILE" ]]; then
+      # shellcheck source=/dev/null
+      source "$STATE_FILE"
+    fi
+  else
+    OLD_PKG="$(dpkg-query -W -f='${Version}' nodejs 2>/dev/null || true)"
+    log "Current nodejs package: ${OLD_PKG:-not installed by apt}"
+    switch_apt_source
+    install_node
+  fi
 
   log "Rebuilding $PM2_APP under Node $(node --version)..."
   (cd "$APP_DIR" && bash -c "$REBUILD_STEPS")
