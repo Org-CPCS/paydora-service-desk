@@ -123,7 +123,7 @@ show_state() {
 restore_apt_source() {
   [[ -n "$BACKUP_DIR" && -d "$BACKUP_DIR" ]] || return 0
   log "Restoring the previous NodeSource apt source from $BACKUP_DIR"
-  sudo rm -f "$SOURCE_LIST"
+  sudo rm -f "$SOURCE_LIST" || true
   sudo cp -p "$BACKUP_DIR"/* /etc/apt/sources.list.d/ 2>/dev/null || true
   sudo apt-get update -qq || true
 }
@@ -148,6 +148,9 @@ EOF
 on_exit() {
   local code=$?
   [[ $code -ne 0 ]] || return 0
+  # Clean-up is best effort: one failing step must not stop the rest, and
+  # set -e would otherwise still apply inside this trap.
+  set +e
   if [[ $INSTALL_STARTED -eq 1 ]]; then
     # apt-get can fail after changing the package, so look before claiming
     # nothing changed.
@@ -155,7 +158,7 @@ on_exit() {
     now="$(dpkg-query -W -f='${Version}' nodejs 2>/dev/null || true)"
     if [[ $NODE_INSTALLED -eq 0 && "$now" == "$OLD_PKG" ]]; then
       restore_apt_source
-      rm -f "$STATE_FILE"
+      rm -f "$STATE_FILE" || true
       log "apt-get install failed but left nodejs at $OLD_PKG. Nothing was restarted."
     else
       log "nodejs package is now ${now:-unknown}."
