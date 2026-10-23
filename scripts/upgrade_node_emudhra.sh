@@ -168,17 +168,24 @@ trap on_exit EXIT
 switch_apt_source() {
   BACKUP_DIR="/var/backups/nodesource-$(date +%Y%m%d-%H%M%S)"
   sudo mkdir -p "$BACKUP_DIR"
-  # From here on, a failure puts the backed-up sources back (see on_exit).
-  SOURCE_SWITCHED=1
-  local f
+  local f sources=()
   shopt -s nullglob
   for f in /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
     if grep -q "deb.nodesource.com" "$f"; then
-      sudo cp -p "$f" "$BACKUP_DIR/"
-      sudo rm -f "$f"
+      sources+=("$f")
     fi
   done
   shopt -u nullglob
+  # Copy every NodeSource source before removing any: if a copy fails, the
+  # script stops here with all of them still in place.
+  for f in ${sources[@]+"${sources[@]}"}; do
+    sudo cp -p "$f" "$BACKUP_DIR/"
+  done
+  # Everything is backed up, so from here on a failure puts it back (on_exit).
+  SOURCE_SWITCHED=1
+  for f in ${sources[@]+"${sources[@]}"}; do
+    sudo rm -f "$f"
+  done
   log "Previous NodeSource apt source saved in $BACKUP_DIR"
 
   if [[ ! -s "$KEYRING" ]]; then
