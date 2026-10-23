@@ -62,6 +62,7 @@ OLD_PKG=""
 SOURCE_SWITCHED=0
 INSTALL_STARTED=0
 NODE_INSTALLED=0
+APT_SKIPPED=0
 # The run that installs Node records how to go back here, so a re-run after a
 # later failure still shows the way back to the original Node 20 package.
 STATE_FILE="$HOME/upgrade_node_emudhra.rollback"
@@ -167,24 +168,37 @@ on_exit() {
   elif [[ $SOURCE_SWITCHED -eq 1 ]]; then
     restore_apt_source
     log "Nothing was installed or restarted."
-  elif [[ -n "$OLD_PKG" && -n "$BACKUP_DIR" ]]; then
+  elif [[ $APT_SKIPPED -eq 1 ]]; then
     # A re-run that skipped the apt steps, using the first run's record.
     print_rollback
   fi
 }
 trap on_exit EXIT
 
+# True when every entry in an apt source file is NodeSource's: each active
+# line of a one-line .list file, or each URIs: field of a deb822 .sources file.
+only_nodesource() {
+  if [[ "$1" == *.sources ]]; then
+    awk 'tolower($1) == "uris:" { for (i = 2; i <= NF; i++) if ($i !~ /deb\.nodesource\.com/) bad = 1 } END {exit bad}' "$1"
+  else
+    awk '$0 !~ /^[ \t]*(#|$)/ && $0 !~ /deb\.nodesource\.com/ {bad=1} END {exit bad}' "$1"
+  fi
+}
+
 switch_apt_source() {
-  BACKUP_DIR="/var/backups/nodesource-$(date +%Y%m%d-%H%M%S)"
-  sudo mkdir -p "$BACKUP_DIR"
   local f sources=()
   shopt -s nullglob
   for f in /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
     if grep -q "deb.nodesource.com" "$f"; then
+      # The file is removed whole, so it must not carry other repositories.
+      only_nodesource "$f" \
+        || die "$f lists other repositories as well as NodeSource. Move the NodeSource entry to a file of its own, then run this again. Nothing was changed."
       sources+=("$f")
     fi
   done
   shopt -u nullglob
+  BACKUP_DIR="/var/backups/nodesource-$(date +%Y%m%d-%H%M%S)"
+  sudo mkdir -p "$BACKUP_DIR"
   # Copy every NodeSource source before removing any: if a copy fails, the
   # script stops here with all of them still in place.
   for f in ${sources[@]+"${sources[@]}"}; do
@@ -266,8 +280,12 @@ warn_extra_ca() {
 
 check_boot_service() {
   local unit="pm2-$(id -un).service" exec_path
-  if ! systemctl list-unit-files "$unit" --no-legend 2>/dev/null | grep -q .; then
+  if ! systemctl cat "$unit" >/dev/null 2>&1; then
     log "WARNING: no $unit, so PM2 will not start after a reboot. Set it up with 'pm2 startup'."
+    return 0
+  fi
+  if ! systemctl is-enabled --quiet "$unit" 2>/dev/null; then
+    log "WARNING: $unit exists but is not enabled, so PM2 will not start after a reboot. Enable it with: sudo systemctl enable $unit"
     return 0
   fi
   exec_path="$(systemctl show -p ExecStart --value "$unit" 2>/dev/null | grep -oE 'path=[^ ;]+' | head -1 | cut -d= -f2 || true)"
@@ -292,6 +310,7 @@ main() {
 
   if already_fixed; then
     log "Already fixed: PM2 and $PM2_APP run Node $MIN_VERSION+ without the emSign root. Nothing to do."
+    warn_extra_ca
     exit 0
   fi
 
@@ -308,6 +327,7 @@ main() {
     # Switching the apt source again would record Node 22 as the version to
     # go back to, so reuse that run's record instead.
     log "Node $(node --version) is already installed and does not trust $BAD_ROOT. Skipping the apt steps."
+    APT_SKIPPED=1
     if [[ -s "$STATE_FILE" ]]; then
       # shellcheck source=/dev/null
       source "$STATE_FILE"
