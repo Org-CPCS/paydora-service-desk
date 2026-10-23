@@ -85,12 +85,17 @@ running_version() {
 app_pid() { pm2 pid "$PM2_APP" 2>/dev/null | tail -1 | tr -d '[:space:]' || true; }
 daemon_pid() { cat "$HOME/.pm2/pm2.pid" 2>/dev/null || true; }
 
-# Exit 0 when the given node binary still trusts the compromised root.
+# Exit 0 when the given node binary still trusts the compromised root. Where
+# Node has it (22.15+), tls.getCACertificates("default") is the store TLS
+# actually uses, NODE_EXTRA_CA_CERTS and --use-system-ca included; older Node
+# only exposes its bundled list.
 trusts_bad_root() {
   "$1" -e '
+    const tls = require("tls");
     const { X509Certificate } = require("crypto");
     const name = "CN=" + process.argv[1];
-    const hit = require("tls").rootCertificates.some((p) => new X509Certificate(p).subject.includes(name));
+    const store = typeof tls.getCACertificates === "function" ? tls.getCACertificates("default") : tls.rootCertificates;
+    const hit = store.some((p) => new X509Certificate(p).subject.includes(name));
     process.exit(hit ? 0 : 1);
   ' "$BAD_ROOT"
 }
@@ -150,6 +155,7 @@ on_exit() {
     now="$(dpkg-query -W -f='${Version}' nodejs 2>/dev/null || true)"
     if [[ $NODE_INSTALLED -eq 0 && "$now" == "$OLD_PKG" ]]; then
       restore_apt_source
+      rm -f "$STATE_FILE"
       log "apt-get install failed but left nodejs at $OLD_PKG. Nothing was restarted."
     else
       log "nodejs package is now ${now:-unknown}."
@@ -208,10 +214,12 @@ switch_apt_source() {
 
 install_node() {
   log "Installing nodejs from node_${NODE_MAJOR}.x..."
+  # Record the way back before apt-get can change anything: if it fails part
+  # way, a retry still finds the original package and source backup.
+  printf 'OLD_PKG=%q\nBACKUP_DIR=%q\n' "$OLD_PKG" "$BACKUP_DIR" > "$STATE_FILE"
   INSTALL_STARTED=1
   sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nodejs
   NODE_INSTALLED=1
-  printf 'OLD_PKG=%q\nBACKUP_DIR=%q\n' "$OLD_PKG" "$BACKUP_DIR" > "$STATE_FILE"
   hash -r
   local have
   have="$(node --version | tr -d 'v')"
@@ -237,6 +245,20 @@ wait_for_app() {
     sleep 2
   done
   die "$PM2_APP did not come back healthy on Node $MIN_VERSION+ within 60s. Check: pm2 logs $PM2_APP"
+}
+
+# The CA check above runs in this shell's environment. The app may be started
+# with extra CA settings this shell does not have, so look at the running app.
+warn_extra_ca() {
+  local pid
+  pid="$(app_pid)"
+  [[ -n "$pid" && -r "/proc/$pid/environ" ]] || return 0
+  if tr '\0' '\n' < "/proc/$pid/environ" | grep -qE '^(NODE_EXTRA_CA_CERTS|NODE_USE_SYSTEM_CA)=|^NODE_OPTIONS=.*--use-(system|openssl)-ca' \
+    || tr '\0' ' ' < "/proc/$pid/cmdline" | grep -qE -- '--use-(system|openssl)-ca'; then
+    log "WARNING: $PM2_APP is started with extra CA settings (NODE_EXTRA_CA_CERTS, NODE_USE_SYSTEM_CA or --use-system-ca). Check they do not add $BAD_ROOT."
+  else
+    log "$PM2_APP uses Node's own CA list, which no longer has $BAD_ROOT."
+  fi
 }
 
 check_boot_service() {
@@ -303,6 +325,7 @@ main() {
 
   wait_for_app
   log "PM2 daemon now runs Node $(running_version "$(daemon_pid)")"
+  warn_extra_ca
   check_boot_service
 
   log "=== Done. ==="
