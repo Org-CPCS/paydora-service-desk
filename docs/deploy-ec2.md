@@ -21,8 +21,9 @@ ssh -i your-key.pem ec2-user@<your-ec2-ip>
 # Amazon Linux 2023
 sudo yum install -y nodejs npm git
 
-# Ubuntu
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+# Ubuntu (Node 22.23.4 or newer; to move an existing box off Node 20,
+# run scripts/upgrade_node_emudhra.sh on it instead)
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
 sudo apt-get install -y nodejs git
 ```
 
